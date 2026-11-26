@@ -189,5 +189,20 @@ test('tenant management on disposable MariaDB 11.8.9',{timeout:120000},async t=>
    const logins=await auth.login('merchant@example.invalid',password)
    const response2=await fetch(base+'/api/v1/tenants',{headers:{Authorization:'Bearer '+logins.accessToken}});assert.equal(response2.status,403)
   })
+  await t.test('only Super Admin can delete a leaf account while preserving its records',async()=>{
+   const current=(await request('GET','/'+merchant,'super')).body
+   assert.equal((await request('DELETE','/'+merchant,'reseller',{lockVersion:current.lockVersion})).status,403)
+   assert.equal((await request('DELETE','/'+root,'super',{lockVersion:1})).status,403)
+   const parent=(await request('GET','/'+sub,'super')).body
+   assert.equal((await request('DELETE','/'+sub,'super',{lockVersion:parent.lockVersion})).status,409)
+   assert.equal((await request('DELETE','/'+merchant,'super',{lockVersion:current.lockVersion+1})).status,409)
+   const closed=await request('DELETE','/'+merchant,'super',{lockVersion:current.lockVersion})
+   assert.equal(closed.status,200)
+   assert.equal(closed.body.status,'closed')
+   assert.equal((await request('GET','','merchant')).status,403)
+   assert.equal((await request('POST','/'+merchant+'/reinstate','super',{lockVersion:closed.body.lockVersion})).status,409)
+   const history=await request('GET','/'+merchant+'/history','super')
+   assert.ok(history.body.events.some(event=>event.action==='tenant.closed'))
+  })
  }finally{for(const s of servers)await new Promise(resolve=>s.close(resolve));for(const c of sessions)c.destroy();await new Promise(resolve=>setImmediate(resolve));await pool.end();await fixture.close()}
 })
