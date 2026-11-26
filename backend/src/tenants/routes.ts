@@ -34,6 +34,7 @@ export function tenantRoutes(auth?:AuthService,service?:TenantService){
  router.get('/:id/history',async(request,response)=>{response.json(await service.history(principalFrom(response.locals),parse(identifier,request.params.id),parse(page,request.query)))})
  router.get('/:id',async(request,response)=>{response.json(await service.get(principalFrom(response.locals),parse(identifier,request.params.id)))})
  router.patch('/:id',async(request,response)=>{response.json(await service.update(principalFrom(response.locals),parse(identifier,request.params.id),parse(update,request.body)))})
+ router.delete('/:id',async(request,response)=>{const input=parse(status,request.body);response.json(await service.status(principalFrom(response.locals),parse(identifier,request.params.id),'closed',input.lockVersion))})
  router.post('/:id/suspend',async(request,response)=>{const input=parse(status,request.body);response.json(await service.status(principalFrom(response.locals),parse(identifier,request.params.id),'suspended',input.lockVersion))})
  router.post('/:id/reinstate',async(request,response)=>{const input=parse(status,request.body);response.json(await service.status(principalFrom(response.locals),parse(identifier,request.params.id),'active',input.lockVersion))})
  router.post('/:id/invitations',async(request,response)=>{response.status(201).json(await service.invite(principalFrom(response.locals),parse(identifier,request.params.id),parse(invitation,request.body)))})

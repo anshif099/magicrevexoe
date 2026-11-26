@@ -84,7 +84,7 @@ export function createApp({ env, isShuttingDown, checkDatabase, auth, tenants, b
       if (env.CORS_ORIGINS.includes(origin)) { callback(null, true); return }
       callback(new HttpError(403, 'Origin is not allowed'))
     },
-    methods: ['GET', 'HEAD', 'POST', 'PATCH', 'OPTIONS'],
+    methods: ['GET', 'HEAD', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: false,
     maxAge: 600,

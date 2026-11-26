@@ -167,17 +167,22 @@ export class TenantService {
    return this.dto(await this.account(db,actor,id))
   })
  }
- async status(principal:Principal,id:string,desired:'active'|'suspended',lockVersion:number){
+ async status(principal:Principal,id:string,desired:'active'|'suspended'|'closed',lockVersion:number){
   return this.actor(principal,async(db,actor)=>{
+   if(desired==='closed')this.auth.authorization.platform(actor.member)
    const row=await this.account(db,actor,id,'tenant.manage')
    if(row.kind==='platform'||row.id===actor.member.tenantId)denied()
    // Only the target may be suspended; a still-suspended ancestor must be restored first.
-   if(row.parent_id)await this.auth.authorization.ancestors(row.parent_id,db)
+   if(desired!=='closed'&&row.parent_id)await this.auth.authorization.ancestors(row.parent_id,db)
    if(row.lock_version!==lockVersion)throw new HttpError(409,'Account version conflict')
    if(row.status==='closed'||row.status===desired)throw new HttpError(409,'Invalid account status transition')
+   if(desired==='closed'&&(await select(db,"SELECT id FROM tenants WHERE parent_id=? AND status<>'closed' LIMIT 1",[id])).length){
+    throw new HttpError(409,'Delete child accounts first')
+   }
    const [changed]=await db.execute<ResultSetHeader>('UPDATE tenants SET status=?,lock_version=lock_version+1 WHERE id=? AND parent_id<=>? AND lock_version=?',[desired,id,row.parent_id,lockVersion])
    if(changed.affectedRows!==1)throw new HttpError(409,'Account version conflict')
-   await this.audit(db,actor,id,desired==='active'?'tenant.reinstated':'tenant.suspended',{fromStatus:row.status,toStatus:desired})
+   const action={active:'tenant.reinstated',suspended:'tenant.suspended',closed:'tenant.closed'}[desired]
+   await this.audit(db,actor,id,action,{fromStatus:row.status,toStatus:desired})
    return this.dto(await this.account(db,actor,id))
   })
  }
