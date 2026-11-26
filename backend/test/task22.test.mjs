@@ -1,3 +1,4 @@
+import {crc32} from 'node:zlib'
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {PNG} from 'pngjs'
@@ -9,10 +10,18 @@ test('financial readiness is fail-closed with no role, catalog or environment by
  assert.ok(Object.values(financialReadiness).every(v=>v===false));assert.equal(Object.isFrozen(financialReadiness),true)
  assert.throws(()=>requireFinancialApproval(),e=>e.status===409&&/written owner approval/.test(e.message))
 })
-test('logo upload validates real bounded PNG bytes and rejects metadata, corrupt files and image bombs',()=>{
+test('logo upload accepts larger PNGs and metadata and rejects corrupt or oversized files',()=>{
  const png=PNG.sync.write(new PNG({width:2,height:2}));assert.deepEqual(validateLogo(png),png)
+ const grayscale=PNG.sync.write(new PNG({width:600,height:2}),{colorType:0});assert.deepEqual(validateLogo(grayscale),grayscale)
+ const metadata=Buffer.alloc(70_000)
+ metadata.writeUInt32BE(metadata.length-12)
+ metadata.write('tEXt',4)
+ metadata.write('Comment',8)
+ metadata.writeUInt32BE(crc32(metadata.subarray(4,-4)),metadata.length-4)
+ const withMetadata=Buffer.concat([png.subarray(0,-12),metadata,png.subarray(-12)])
+ assert.deepEqual(validateLogo(withMetadata),withMetadata)
  const corrupted=Buffer.from(png);corrupted[corrupted.length-5]^=1;assert.throws(()=>validateLogo(corrupted),e=>e.status===400)
- for(const invalid of [Buffer.from('<svg onload="script"/>'),Buffer.concat([png,Buffer.from('tail')]),PNG.sync.write(new PNG({width:513,height:1})),Buffer.alloc(65537)])assert.throws(()=>validateLogo(invalid),e=>e.status===400)
+ for(const invalid of [Buffer.from('<svg onload="script"/>'),Buffer.concat([png,Buffer.from('tail')]),Buffer.concat([png,Buffer.alloc(1_000_000-png.length)])])assert.throws(()=>validateLogo(invalid),e=>e.status===400)
 })
 test('business keywords are explicit bounded context, with strict fields and optimistic version',()=>{
  assert.equal(presentationInput.safeParse({lockVersion:0,seedKeywords:['friendly service','short waiting','clean space']}).success,true)

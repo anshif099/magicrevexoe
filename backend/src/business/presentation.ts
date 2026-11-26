@@ -1,4 +1,4 @@
-import {inflateSync,crc32} from 'node:zlib'
+import {crc32} from 'node:zlib'
 import {z} from 'zod'
 import type {PoolConnection} from 'mysql2/promise'
 import type {Principal} from '../auth/authorization.js'
@@ -8,21 +8,26 @@ import {HttpError} from '../middleware/error-handler.js'
 
 const keyword=z.string().trim().min(2).max(80).regex(/^[\p{L}\p{M}\p{N} '&(),.-]+$/u)
 export const presentationInput=z.object({lockVersion:z.number().int().min(0).max(4294967294),seedKeywords:z.array(keyword).refine(v=>v.length===0||(v.length>=3&&v.length<=5)).refine(v=>new Set(v.map(k=>k.toLowerCase())).size===v.length)}).strict()
+export const logoSizeLimit=1_000_000
 export function validateLogo(raw:unknown):Buffer{
- if(!Buffer.isBuffer(raw)||raw.length>65536||!raw.subarray(0,8).equals(Buffer.from('89504e470d0a1a0a','hex')))throw new HttpError(400,'A static PNG up to 64 KiB is required')
- try{
-  let offset=8,width=0,height=0,channels=0,ended=false,header=false;const data:Buffer[]=[]
-  while(offset<raw.length){const length=raw.readUInt32BE(offset),end=offset+12+length;if(end>raw.length)throw Error();const kind=raw.toString('ascii',offset+4,offset+8),chunk=raw.subarray(offset+8,offset+8+length)
-   if(crc32(raw.subarray(offset+4,end-4))!==raw.readUInt32BE(end-4))throw Error()
-   if(kind==='IHDR'){if(header||offset!==8||length!==13)throw Error();header=true;width=chunk.readUInt32BE(0);height=chunk.readUInt32BE(4);channels=chunk[9]===2?3:chunk[9]===6?4:0;if(!width||!height||width>512||height>512||chunk[8]!==8||!channels||chunk[10]!==0||chunk[11]!==0||chunk[12]!==0)throw Error()}
-   else if(kind==='IDAT'){if(!header||ended)throw Error();data.push(chunk)}
-   else if(kind==='IEND'){if(length!==0||!header||!data.length||end!==raw.length)throw Error();ended=true}
-   else throw Error() // no metadata, scripts, external resources, animation or polyglot tail
-   offset=end
+ if(!Buffer.isBuffer(raw)||raw.length>=logoSizeLimit||!raw.subarray(0,8).equals(Buffer.from('89504e470d0a1a0a','hex'))){
+  throw new HttpError(400,'Choose a PNG smaller than 1 MB')
+ }
+ let hasImageData=false
+ for(let offset=8;offset+12<=raw.length;){
+  const length=raw.readUInt32BE(offset),end=offset+12+length
+  if(end>raw.length||crc32(raw.subarray(offset+4,end-4))!==raw.readUInt32BE(end-4))break
+  const kind=raw.toString('latin1',offset+4,offset+8)
+  if(offset===8&&(kind!=='IHDR'||length!==13||!raw.readUInt32BE(offset+8)||!raw.readUInt32BE(offset+12)))break
+  if(offset!==8&&kind==='IHDR')break
+  if(kind==='IDAT'&&length>0)hasImageData=true
+  if(kind==='IEND'){
+   if(length===0&&hasImageData&&end===raw.length)return raw
+   break
   }
-  if(!ended)throw Error();const stride=width*channels+1,decoded=inflateSync(Buffer.concat(data),{maxOutputLength:stride*height});if(decoded.length!==stride*height)throw Error();for(let y=0;y<height;y++)if(decoded[y*stride]!>4)throw Error()
-  return raw
- }catch{throw new HttpError(400,'PNG must be non-interlaced RGB/RGBA, at most 512 by 512, without metadata or animation')}
+  offset=end
+ }
+ throw new HttpError(400,'The PNG is incomplete or corrupted')
 }
 export class PresentationService{
  constructor(private readonly tenants:TenantService){}
