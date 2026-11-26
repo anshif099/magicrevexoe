@@ -1,4 +1,12 @@
+import { randomUUID } from 'node:crypto'
 import type { ErrorRequestHandler } from 'express'
+
+const diagnosticCodes = new Set([
+  'ER_BAD_FIELD_ERROR', 'ER_TABLEACCESS_DENIED_ERROR', 'ER_COLUMNACCESS_DENIED_ERROR',
+  'ER_DBACCESS_DENIED_ERROR', 'ER_ACCESS_DENIED_ERROR', 'ER_PARSE_ERROR',
+  'ER_WRONG_ARGUMENTS', 'ER_LOCK_DEADLOCK', 'ER_LOCK_WAIT_TIMEOUT',
+  'ER_QUERY_INTERRUPTED', 'PROTOCOL_CONNECTION_LOST', 'ECONNREFUSED', 'ETIMEDOUT',
+])
 
 export class HttpError extends Error {
   constructor(public readonly status: number, message: string) { super(message) }
@@ -28,6 +36,10 @@ export const errorHandler: ErrorRequestHandler = (error: unknown, _request, resp
     response.set('Cache-Control','no-store').status(503).json({error:'Service setup is incomplete. Contact the administrator.',code:'APPLICATION_SCHEMA_UNAVAILABLE'})
     return
   }
-  console.error('Unhandled request error; details withheld to protect sensitive data.')
-  response.status(500).json({ error: 'Internal server error' })
+  const reference = randomUUID()
+  const failure = typeof code === 'string' && diagnosticCodes.has(code) ? code
+    : error instanceof TypeError ? 'TypeError'
+    : error instanceof RangeError ? 'RangeError' : 'UNCLASSIFIED'
+  console.error('Unhandled request error', { reference, failure })
+  response.set('Cache-Control','no-store').status(500).json({ error: 'Internal server error', reference })
 }
