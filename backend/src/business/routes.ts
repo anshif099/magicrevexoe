@@ -15,7 +15,7 @@ export function businessRoutes(auth?:AuthService,business?:BusinessService){
   if(request.method!=='GET')try{limiter.consume(`business-write:${principalFrom(response.locals).identity.sub}`,30)}catch(error){response.set('Retry-After','900');throw error}
   next()
  })
- router.get('/industry-channels',async(_request,response)=>{response.json(await business.channels(principalFrom(response.locals)))})
+ router.get('/industry-channels',async(request,response)=>{response.json(await business.channels(principalFrom(response.locals),request.query.includeRetired==='true'))})
  router.get('/industry-channels/:id/versions/:versionId',async(request,response)=>{response.json(await business.publishedVersions(principalFrom(response.locals),parse(identifier,request.params.id),parse(identifier,request.params.versionId)))})
  router.get('/industry-channels/:id/versions',async(request,response)=>{response.json(await business.publishedVersions(principalFrom(response.locals),parse(identifier,request.params.id)))})
  router.get('/industry-channels/:id',async(request,response)=>{response.json(await business.channelDetails(principalFrom(response.locals),parse(identifier,request.params.id)))})

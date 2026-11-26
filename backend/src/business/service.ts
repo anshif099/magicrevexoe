@@ -70,7 +70,12 @@ export class BusinessService{
   await this.tenants.auditChange(db,actor,id,'merchant.updated',{nameChanged:true},'tenant',id)
   return{id,name:input.name,lockVersion:input.lockVersion+1}
  })}
- async channels(principal:Principal){return this.tenants.withActor(principal,async(db,actor)=>{this.tenants.requirePermission(actor,'tenant.read');return{channels:(await select(db,"SELECT * FROM industry_channels WHERE status='active' ORDER BY id")).map(c=>this.channelDto(c))}},true)}
+ async channels(principal:Principal,includeRetired=false){return this.tenants.withActor(principal,async(db,actor)=>{
+  this.tenants.requirePermission(actor,'tenant.read')
+  if(includeRetired)this.auth.authorization.platform(actor.member)
+  const rows=await select(db,includeRetired?'SELECT * FROM industry_channels ORDER BY id':"SELECT * FROM industry_channels WHERE status='active' ORDER BY id")
+  return{channels:rows.map(c=>this.channelDto(c))}
+ },true)}
  async channelDetails(principal:Principal,id:string){return this.tenants.withActor(principal,async(db,actor)=>{this.tenants.requirePermission(actor,'tenant.read');return this.channelDto(await this.channel(db,id))},true)}
  async publishedVersions(principal:Principal,id:string,versionId?:string){return this.tenants.withActor(principal,async(db,actor)=>{
   this.tenants.requirePermission(actor,'tenant.read');await this.channel(db,id)
