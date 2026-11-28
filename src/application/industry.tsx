@@ -6,8 +6,10 @@ import type {Channel} from './types'
 export function IndustryFields({channels,merchant}:{channels:Channel[];merchant:boolean}){
  const [categoryCode,setCategoryCode]=useState('')
  const [subcategoryCode,setSubcategoryCode]=useState('')
+ const available=channels.filter(channel=>merchant||categoryFor(channel.code))
  const category=categoryFor(categoryCode)
  const types=Object.entries(category?.subcategories[subcategoryCode]?.businessTypes??{})
+ if(!merchant&&!available.length)return null
  return <>
   <Field label={merchant?'Industry channel':'Industry category'} name="industryChannelCode">
    <select name="industryChannelCode" required value={categoryCode} onChange={event=>{
@@ -15,7 +17,7 @@ export function IndustryFields({channels,merchant}:{channels:Channel[];merchant:
     setSubcategoryCode('')
    }}>
     <option value="">Choose an industry</option>
-    {channels.filter(channel=>merchant||categoryFor(channel.code)).map(channel=><option key={channel.id} value={channel.code}>{channel.name}</option>)}
+    {available.map(channel=><option key={channel.id} value={channel.code}>{channel.name}</option>)}
    </select>
   </Field>
   <Field label="Subcategory" name="subcategoryCode">

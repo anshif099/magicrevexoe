@@ -25,7 +25,6 @@ export const tenantScopeSQL=`WITH RECURSIVE scope AS (
  UNION ALL SELECT t.id,s.depth+1,(s.effective AND t.status='active') FROM tenants t JOIN scope s ON t.parent_id=s.id WHERE s.depth<3
 )`
 const scope=tenantScopeSQL
-const fields='t.id,t.public_id,t.kind,t.parent_id,t.name,t.status,t.industry_channel_id,t.business_classification,t.lock_version,t.created_at,t.updated_at,s.effective'
 
 export class TenantService {
  constructor(private readonly pool:Pool,private readonly auth:AuthService,private readonly delivery?:InvitationDelivery){}
@@ -62,7 +61,7 @@ export class TenantService {
  private dto(row:Account){return{id:row.id,publicId:(row.public_id as Buffer).toString('hex'),kind:row.kind,parentId:row.parent_id,name:row.name,status:row.status,industryChannelId:row.industry_channel_id,classification:classificationFrom(row),lockVersion:row.lock_version,createdAt:row.created_at,updatedAt:row.updated_at,effectiveStatus:Number(row.effective)?'active':'blocked'}}
  private async account(db:PoolConnection,actor:Actor,id:string,permission='tenant.read'):Promise<Account>{
   this.permission(actor,permission)
-  const row=(await select<Account>(db,`${scope} SELECT ${fields} FROM tenants t JOIN scope s ON s.id=t.id WHERE t.id=?`,[actor.member.tenantId,id]))[0]
+  const row=(await select<Account>(db,`${scope} SELECT t.*,s.effective FROM tenants t JOIN scope s ON s.id=t.id WHERE t.id=?`,[actor.member.tenantId,id]))[0]
   if(!row)throw new HttpError(404,'Account not found')
   return row
  }
@@ -153,7 +152,12 @@ export class TenantService {
     if(input.kind==='merchant')channelId=channel.id
    }
    const publicId=randomBytes(16)
-   await db.execute('INSERT INTO tenants(public_id,kind,parent_id,parent_kind,name,industry_channel_id,business_classification) VALUES (?,?,?,?,?,?,?)',[publicId,input.kind,parent.id,parent.kind,input.name,channelId,classification?JSON.stringify(classification):null])
+   const tenantValues=[publicId,input.kind,parent.id,parent.kind,input.name,channelId]
+   if(classification){
+    await db.execute('INSERT INTO tenants(public_id,kind,parent_id,parent_kind,name,industry_channel_id,business_classification) VALUES (?,?,?,?,?,?,?)',[...tenantValues,JSON.stringify(classification)])
+   }else{
+    await db.execute('INSERT INTO tenants(public_id,kind,parent_id,parent_kind,name,industry_channel_id) VALUES (?,?,?,?,?,?)',tenantValues)
+   }
    const tenant=(await select<Account>(db,'SELECT *,1 AS effective FROM tenants WHERE public_id=? AND parent_id=?',[publicId,parent.id]))[0]!
    await this.audit(db,actor,tenant.id,'tenant.created',{parentId:parent.id,kind:input.kind})
    // Initial role is derived from the child kind, not request-supplied permissions.
@@ -168,7 +172,7 @@ export class TenantService {
    const anchor=target?(await this.account(db,actor,target)).id:actor.member.tenantId
    // Ancestor state is included even when an authorized manager lists a suspended subtree.
    const parentState=target?(await this.account(db,actor,target)).effective:1
-   const result=await select<Account>(db,`${scope} SELECT ${fields} FROM tenants t JOIN scope s ON s.id=t.id WHERE t.id>? ${target?'AND t.id<>?':''} ORDER BY t.id LIMIT ?`,[anchor,page.afterId??'0',...(target?[anchor]:[]),page.limit])
+   const result=await select<Account>(db,`${scope} SELECT t.*,s.effective FROM tenants t JOIN scope s ON s.id=t.id WHERE t.id>? ${target?'AND t.id<>?':''} ORDER BY t.id LIMIT ?`,[anchor,page.afterId??'0',...(target?[anchor]:[]),page.limit])
    for(const row of result)if(!Number(parentState))row.effective=0
    return{accounts:result.map(row=>this.dto(row)),nextCursor:result.length===page.limit?result.at(-1)!.id:null}
   },true)

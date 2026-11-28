@@ -178,5 +178,22 @@ test('merchant business APIs on disposable MariaDB 11.8.9',{timeout:120000},asyn
    await assert.rejects(business.createBranch(actors.merchant.principal,merchant,{...branchInput,code:'rollback'}))
    assert.equal((await query('SELECT COUNT(*) AS n FROM branches WHERE tenant_id=?',[merchant]))[0].n,before)
   })
+  await t.test('legacy accounts can be read and created before the classification migration',async()=>{
+   await query("DELETE FROM industry_channels WHERE code LIKE 'industry\\_%' AND id NOT IN (SELECT industry_channel_id FROM tenants WHERE industry_channel_id IS NOT NULL)")
+   await query('ALTER TABLE tenants DROP COLUMN business_classification')
+   const accounts=await request('GET','/tenants?limit=50','reseller')
+   assert.equal(accounts.status,200)
+   assert.ok(accounts.body.accounts.some(account=>account.id===reseller&&account.classification===null))
+   const profile=await request('GET','/merchants/'+merchant,'reseller')
+   assert.equal(profile.status,200)
+   assert.equal(profile.body.classification,null)
+   const legacy={parentId:reseller,name:'Legacy provisioning',invitation:{email:'legacy-directory@example.invalid',displayName:'Legacy admin'}}
+   const subResult=await request('POST','/tenants','reseller',{...legacy,kind:'sub_reseller'})
+   const merchantResult=await request('POST','/merchants','reseller',{...legacy,industryChannelCode:'salon_spa'})
+   for(const result of [subResult,merchantResult]){
+    assert.equal(result.status,201)
+    assert.equal(result.body.tenant.classification,null)
+   }
+  })
  }finally{if(server)await new Promise(resolve=>server.close(resolve));for(const c of sessions)c.destroy();await new Promise(resolve=>setImmediate(resolve));await pool.end();await fixture.close()}
 })
