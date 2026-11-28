@@ -2,7 +2,7 @@
 import {useState} from 'react'
 import {api} from './api'
 import {IndustryFields,IndustrySubcategories} from './industry'
-import {categoryFor,labelsFor} from '../../backend/src/business/industry-directory'
+import {categoryFor,industryDirectory,labelsFor} from '../../backend/src/business/industry-directory'
 import {useAuth} from './auth'
 import {Link} from './navigation'
 import {creatableKinds,has,kindName,permittedParent,type Account,type Channel,type ChannelVersion,type Kind} from './types'
@@ -49,10 +49,20 @@ export function ChannelsPage(){
  const member=useAuth().me!.selectedMembership!
  const editable=member.kind==='platform'&&member.roleCode==='super_admin'&&has(member,'platform.manage')
  const catalog=useLoad('catalog:'+editable,()=>api.request<{channels:Channel[]}>('/industry-channels'+(editable?'?includeRetired=true':'')))
+ const channels=catalog.data?.channels??[]
+ const channelCodes=new Set(channels.map(channel=>channel.code))
+ const preview=Object.entries(industryDirectory).filter(([code])=>!channelCodes.has(code))
  return <><PageTitle title="Industry channels"/><LoadState {...catalog} retry={catalog.reload}/>
-  {catalog.data?.channels.length===0&&<Notice>No industry channels are available.</Notice>}
-  <div className="live-grid">{catalog.data?.channels.map(c=><ChannelCard key={c.id} channel={c} editable={editable} onChanged={catalog.reload}/>)}</div></>
-
+  <div className="live-grid">{channels.map(c=><ChannelCard key={c.id} channel={c} editable={editable} onChanged={catalog.reload}/>)}</div>
+  {preview.length>0&&<section aria-label="Industry directory preview">
+   <h2>Industry directory preview</h2>
+   <Notice>Browse categories, subcategories, and business types here. Account setup and review tools for these entries require the database upgrade.</Notice>
+   <div className="live-grid">{preview.map(([code,industry])=><section className="live-card" key={code}>
+    <h3>{industry.name}</h3>
+    <IndustrySubcategories code={code}/>
+   </section>)}</div>
+  </section>}
+ </>
 }
 function ChannelCard({channel,editable,onChanged}:{channel:Channel;editable:boolean;onChanged:()=>void}){
  const versions=useLoad('versions:'+channel.id,()=>api.request<{versions:ChannelVersion[]}>('/industry-channels/'+channel.id+'/versions')),[draft,setDraft]=useState<ChannelVersion|null>(null)
