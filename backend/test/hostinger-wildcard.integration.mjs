@@ -34,7 +34,7 @@ async function owned(port){
  const pool=createPool({...fixture.options,user,password,database,connectionLimit:3,charset:'utf8mb4',timezone:'Z',supportBigNumbers:true,bigNumberStrings:true});pools.push(pool);pool.on('connection',c=>sessions.add(c))
  const [[id]]=await pool.query('SELECT CURRENT_USER() AS account,@@hostname AS hostname');assert.equal(id.account,account)
  const grants=async()=>(await pool.query('SHOW GRANTS'))[0].map(r=>String(Object.values(r)[0]))
- const phase=async phase=>targetPolicy.parse({environment:'production',host:'127.0.0.1',port:3306,database,expectedAccount:account,serverHostname:id.hostname,transport:'HOSTINGER_LOCAL',hostingerLocalApprovalId:context.localTransportApproval.approvalId,hostingerWildcard:{phase,approvalId:context.wildcardApprovalId,operatorReference:'TEST-ONLY-OPERATOR',recoveryReference:'TEST-ONLY-RECOVERY',runtimeApprovalReference:'TEST-ONLY-RUNTIME',grantFingerprint:inspectWildcardGrants(await grants(),phase),manifestFingerprint:digest(manifest),releaseFingerprint,notBefore:new Date(Date.now()-1000).toISOString(),expiresAt:new Date(Date.now()+1800000).toISOString(),riskAcknowledgement:wildcardAcknowledgement}})
+ const phase=async (phase,reference=manifest)=>targetPolicy.parse({environment:'production',host:'127.0.0.1',port:3306,database,expectedAccount:account,serverHostname:id.hostname,transport:'HOSTINGER_LOCAL',hostingerLocalApprovalId:context.localTransportApproval.approvalId,hostingerWildcard:{phase,approvalId:context.wildcardApprovalId,operatorReference:'TEST-ONLY-OPERATOR',recoveryReference:'TEST-ONLY-RECOVERY',runtimeApprovalReference:'TEST-ONLY-RUNTIME',grantFingerprint:inspectWildcardGrants(await grants(),phase),manifestFingerprint:digest(reference),releaseFingerprint,notBefore:new Date(Date.now()-1000).toISOString(),expiresAt:new Date(Date.now()+1800000).toISOString(),riskAcknowledgement:wildcardAcknowledgement}})
  const transition=async privileges=>{for(const c of sessions)c.destroy();sessions.clear();await fixture.admin.query('REVOKE ALL PRIVILEGES ON '+quote(database)+".* FROM ?@'127.0.0.1'",[user]);await fixture.admin.query('GRANT '+privileges+' ON '+quote(database)+".* TO ?@'127.0.0.1'",[user])}
  return {fixture,pool,pools,password,phase,grants,transition,async close(){for(const c of sessions)c.destroy();for(const p of pools)await p.end();await fixture.close()}}
 }
@@ -46,18 +46,11 @@ async function command(x,p,name,extra=[]){
   return await promisify(execFile)(process.execPath,['dist/migrations/operator-cli.js',name,'--target',target,'--environment','production',...extra],{cwd:new URL('..',import.meta.url),env,timeout:30000})
  }finally{await unlink(target);await rmdir(dir)}
 }
-async function apply(x,cli=false){
- const p=await x.phase('initial'),audit=[]
- if(cli){
-  const dir=await privateDirectory(),report=join(dir,'preflight.json'),log=join(dir,'apply.jsonl')
-  try{
-   await command(x,p,'preflight',['--report',report]);const r=JSON.parse(await readFile(report,'utf8'))
-   await command(x,p,'apply',['--approval',report,'--audit',log,'--confirm-production','APPLY-PRODUCTION:'+digest(p)])
-   audit.push(...(await readFile(log,'utf8')).trim().split('\n').map(line=>JSON.parse(line)));assert.equal(audit.at(-1).event,'execution_completed')
-   return {p,r,audit,result:audit.at(-1).summary}
-  }finally{await unlink(report);await unlink(log);await rmdir(dir)}
- }
- const r=await operatorMigrations(x.pool,files,manifest,p,'preflight',context),result=await operatorMigrations(x.pool,files,manifest,p,'apply',{...context,approval:r.approval,productionConfirmation:'APPLY-PRODUCTION:'+digest(p),audit:async e=>audit.push(e)});return {p,r,audit,result}
+
+async function apply(x){
+ const policy=await x.phase('initial')
+ const preflight=await operatorMigrations(x.pool,files,manifest,policy,'preflight',context)
+ return operatorMigrations(x.pool,files,manifest,policy,'apply',{...context,approval:preflight.approval,productionConfirmation:'APPLY-PRODUCTION:'+digest(policy),audit:async()=>{}})
 }
 
 test('raw Hostinger policy: complete migration, phases, guards, native encrypted recovery',{timeout:180000},async t=>{
@@ -72,9 +65,30 @@ test('raw Hostinger policy: complete migration, phases, guards, native encrypted
    await x.transition('SELECT,INSERT,UPDATE,CREATE,ALTER,TRIGGER');await assert.rejects(operatorMigrations(pool,files,manifest,p,'preflight',context),/PRIVILEGE_SET_MISMATCH/);await x.transition('ALL PRIVILEGES')
    assert.equal((await pool.query('SHOW TABLES'))[0].length,0)
   })
-  await t.test('all85 raw-grant migrations retain ledger, manifest, disclosure and exact46 definers',async()=>{
-   const {p,audit,result}=await apply(x,true);assert.equal(result.applied.length,88);assert.equal(result.exactDatabaseIsolation,false);assert.ok(audit.some(e=>e.permissionPolicy==='hostinger-wildcard'&&e.exactDatabaseIsolation===false))
-   await assert.rejects(operatorMigrations(pool,files,manifest,p,'preflight',context),/INITIAL_EMPTY_ONLY/)
+  await t.test('approved upgrade from 000084 preserves history and seeds the full directory',async()=>{
+   const prefixFiles=files.slice(0,85)
+   const prefixManifest={...manifest,checksums:manifest.checksums.slice(0,85),prefixes:Object.fromEntries(Object.entries(manifest.prefixes).filter(([key])=>key==='empty'||key<='000084'))}
+   const p=await x.phase('initial',prefixManifest),upgrade=await x.phase('upgrade'),audit=[]
+   await assert.rejects(operatorMigrations(pool,files,manifest,upgrade,'preflight',context),/UNEXPECTED_UPGRADE_PREFIX/)
+   const initial=await operatorMigrations(pool,prefixFiles,prefixManifest,p,'preflight',context)
+   await operatorMigrations(pool,prefixFiles,prefixManifest,p,'apply',{...context,approval:initial.approval,productionConfirmation:'APPLY-PRODUCTION:'+digest(p),audit:async()=>{}})
+   const initialFull=await x.phase('initial')
+   await assert.rejects(operatorMigrations(pool,files,manifest,initialFull,'preflight',context),/INITIAL_EMPTY_ONLY/)
+   const [before]=await pool.query('SELECT * FROM schema_migrations ORDER BY version')
+   const dir=await privateDirectory(),report=join(dir,'upgrade-preflight.json'),log=join(dir,'upgrade-apply.jsonl')
+   try{
+    await command(x,upgrade,'preflight',['--report',report])
+    assert.deepEqual(JSON.parse(await readFile(report,'utf8')).pending,['000085','000086','000087'])
+    await command(x,upgrade,'apply',['--approval',report,'--audit',log,'--confirm-production','APPLY-PRODUCTION:'+digest(upgrade)])
+    audit.push(...(await readFile(log,'utf8')).trim().split('\n').map(line=>JSON.parse(line)))
+   }finally{await unlink(report);await unlink(log);await rmdir(dir)}
+   assert.equal(audit.at(-1).event,'execution_completed')
+   assert.deepEqual(audit.filter(e=>e.event==='step_applied').map(e=>e.version),['000085','000086','000087'])
+   const [after]=await pool.query("SELECT * FROM schema_migrations WHERE version<='000084' ORDER BY version")
+   assert.deepEqual(after,before)
+   assert.equal(Number((await pool.query('SELECT COUNT(*) AS n FROM industry_channels'))[0][0].n),38)
+
+   await assert.rejects(operatorMigrations(pool,files,manifest,upgrade,'preflight',context),/UNEXPECTED_UPGRADE_PREFIX/)
    const verified=await operatorMigrations(pool,files,manifest,await x.phase('verify'),'verify-complete',context);assert.equal(verified.applied.length,88);assert.equal(verified.permissionPolicyAccepted,true)
    const cli=JSON.parse((await command(x,await x.phase('verify'),'verify-complete')).stdout);assert.equal(cli.exactDatabaseIsolation,false);assert.equal(cli.permissionPolicyAccepted,true);assert.equal(cli.verified,undefined)
    const c=await pool.getConnection();try{await verifySchema(c,manifest,files,88)}finally{c.destroy()}

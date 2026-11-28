@@ -64,7 +64,7 @@ export async function operatorMigrations(pool:Pool,files:Migration[],manifest:Sc
  const complete=mode==='verify-complete'||mode==='check-runtime'
  if(complete&&!wildcard)throw new MigrationError('HOSTINGER_WILDCARD_POLICY_REQUIRED')
  if(wildcard){
-  checkWildcardApproval(policy,options.wildcardApprovalId,mode==='verify-complete'?'verify':mode==='check-runtime'?'runtime':'initial')
+  checkWildcardApproval(policy,options.wildcardApprovalId,mode==='verify-complete'?'verify':mode==='check-runtime'?'runtime':wildcard.phase==='upgrade'?'upgrade':'initial')
   if(await wildcardReleaseFingerprint()!==wildcard.releaseFingerprint)throw new MigrationError('HOSTINGER_WILDCARD_RELEASE_MISMATCH')
  }
  if(mode==='apply'&&policy.environment==='production'&&options.productionConfirmation!==`APPLY-PRODUCTION:${digest(policy)}`)throw new MigrationError('EXPLICIT_PRODUCTION_CONFIRMATION_REQUIRED')
@@ -89,6 +89,10 @@ export async function operatorMigrations(pool:Pool,files:Migration[],manifest:Sc
     if(count!==(options.reviewedFirstTriggerResume?25:0))throw new MigrationError('CLOUD_STARTUP_INITIAL_EMPTY_ONLY')
     const [objects]=await db.query<RowDataPacket[]>('SELECT (SELECT COUNT(*) FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA=DATABASE())+(SELECT COUNT(*) FROM information_schema.EVENTS WHERE EVENT_SCHEMA=DATABASE())+(SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()) AS n')
     if(Number(objects[0]?.n)!==(options.reviewedFirstTriggerResume?1:0))throw new MigrationError('CLOUD_STARTUP_INITIAL_EMPTY_ONLY')
+   }
+   if(wildcard?.phase==='upgrade'&&!approval){
+    const lastApplied=files[count-1]?.version
+    if(lastApplied!=='000084'||files.slice(count).map(file=>file.version).join(',')!=='000085,000086,000087')throw new MigrationError('HOSTINGER_WILDCARD_UNEXPECTED_UPGRADE_PREFIX')
    }
    const shape=await verifySchema(db,manifest,files,count)
    const [triggers]=await db.query<RowDataPacket[]>('SELECT DEFINER FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')

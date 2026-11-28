@@ -11,7 +11,7 @@ export const wildcardAccount='u676472791_magicrev_user@127.0.0.1'
 export const wildcardAcknowledgement='I_ACCEPT_WILDCARD_SCHEMA_AUTHORITY_AND_SHARED_DEFINER_RISK'
 const reference=z.string().refine(validLocalApprovalId)
 export const hostingerWildcardPolicy=z.object({
- phase:z.enum(['initial','verify','bootstrap','runtime']),approvalId:reference,
+ phase:z.enum(['initial','upgrade','verify','bootstrap','runtime']),approvalId:reference,
  operatorReference:reference,recoveryReference:reference,runtimeApprovalReference:reference,
  grantFingerprint:z.string().regex(/^[a-f0-9]{64}$/),manifestFingerprint:z.string().regex(/^[a-f0-9]{64}$/),
  releaseFingerprint:z.string().regex(/^[a-f0-9]{64}$/),

@@ -23,7 +23,7 @@ async function main(){
  const wildcardApprovalId=process.env.HOSTINGER_WILDCARD_APPROVAL_ID
  if(command==='verify-complete'&&!policy.hostingerWildcard)throw new MigrationError('HOSTINGER_WILDCARD_POLICY_REQUIRED')
  if(policy.hostingerWildcard){
-  checkWildcardApproval(policy,wildcardApprovalId,command==='verify-complete'?'verify':command==='check-runtime'?'runtime':'initial')
+  checkWildcardApproval(policy,wildcardApprovalId,command==='verify-complete'?'verify':command==='check-runtime'?'runtime':policy.hostingerWildcard.phase==='upgrade'?'upgrade':'initial')
   if(await wildcardReleaseFingerprint()!==policy.hostingerWildcard.releaseFingerprint)throw new MigrationError('HOSTINGER_WILDCARD_RELEASE_MISMATCH')
  }
  if(policy.cloudStartup&&((command==='check-runtime')!==(policy.cloudStartup.profile==='runtime-dbwide')))throw new MigrationError('CLOUD_STARTUP_COMMAND_PROFILE_MISMATCH')
