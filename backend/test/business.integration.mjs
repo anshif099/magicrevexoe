@@ -47,8 +47,8 @@ test('merchant business APIs on disposable MariaDB 11.8.9',{timeout:120000},asyn
   }
   for(const row of await query("SELECT id FROM tenants WHERE kind='merchant'"))await fundTestMerchant(pool,row.id)
   server=createServer(createApp({env,auth,tenants,business,checkDatabase:async()=>{},isShuttingDown:()=>false}));server.listen(0,'127.0.0.1');await once(server,'listening');base='http://127.0.0.1:'+server.address().port
-  await t.test('all active account types can read the three seeded channels, with no drafts exposed',async()=>{
-   for(const actor of Object.keys(actors)){const r=await request('GET','/industry-channels',actor);assert.equal(r.status,200);assert.equal(r.body.channels.length,3)}
+  await t.test('all active account types can read all seeded channels, with no drafts exposed',async()=>{
+   for(const actor of Object.keys(actors)){const r=await request('GET','/industry-channels',actor);assert.equal(r.status,200);assert.equal(r.body.channels.length,38)}
    assert.equal((await request('GET','/industry-channels',null)).status,401)
    assert.equal((await request('GET','/industry-channels/'+channels.clinic_healthcare,'staff')).body.name,'Clinic & Healthcare')
    assert.deepEqual((await request('GET','/industry-channels/'+channel+'/versions','merchant')).body.versions,[])
@@ -81,6 +81,20 @@ test('merchant business APIs on disposable MariaDB 11.8.9',{timeout:120000},asyn
    assert.equal((await request('PATCH','/merchants/'+merchant,'merchant',{name:'Renamed',lockVersion:own.body.lockVersion})).status,200)
    assert.equal((await request('PATCH','/merchants/'+merchant,'staff',{name:'Forbidden',lockVersion:2})).status,403)
    assert.equal((await request('GET','/merchants/'+reseller,'super')).status,404)
+  })
+  await t.test('account onboarding persists directory classifications and rejects mismatched selections',async()=>{
+   const classification={categoryCode:'industry_04',subcategoryCode:'dental',businessTypeCode:'orthodontics'}
+   for(const [kind,actor,parentId] of [['reseller','super',root],['sub_reseller','reseller',reseller],['merchant','sub',sub]]){
+    const path=kind==='merchant'?'/merchants':'/tenants'
+    const input={parentId,name:'Directory example',classification,invitation:{email:kind+'-directory@example.invalid',displayName:'Directory administrator'},...(kind==='merchant'?{industryChannelCode:'industry_04'}:{kind})}
+    assert.equal((await request('POST',path,actor,{...input,classification:{...classification,subcategoryCode:'bakeries'}})).status,400)
+    const created=await request('POST',path,actor,input)
+    assert.equal(created.status,201)
+    assert.deepEqual(created.body.tenant.classification,classification)
+    const saved=await request('GET',path+'/'+created.body.tenant.id,actor)
+    assert.equal(saved.status,200)
+    assert.deepEqual(saved.body.classification,classification)
+   }
   })
   await t.test('merchant profiles and branches respect every account hierarchy and peer boundary',async()=>{
    for(const actor of ['super','reseller','sub','merchant','staff'])assert.equal((await request('GET','/merchants/'+merchant,actor)).status,200)
@@ -145,7 +159,7 @@ test('merchant business APIs on disposable MariaDB 11.8.9',{timeout:120000},asyn
   })
   await t.test('retired channels block new onboarding; suspended ancestors block business access',async()=>{
    assert.equal((await request('PATCH','/industry-channels/'+channels.restaurant_cafe,'super',{status:'retired'})).status,200)
-   const visible=await request('GET','/industry-channels','merchant');assert.equal(visible.body.channels.length,2)
+   const visible=await request('GET','/industry-channels','merchant');assert.equal(visible.body.channels.length,37)
    const requestBody={parentId:reseller,name:'No retired',industryChannelCode:'restaurant_cafe',invitation:{email:'retired@example.invalid',displayName:'No'}}
    assert.equal((await request('POST','/merchants','reseller',requestBody)).status,400)
    await query("UPDATE tenants SET status='suspended' WHERE id=?",[reseller])

@@ -66,18 +66,18 @@ test('raw Hostinger policy: complete migration, phases, guards, native encrypted
   await t.test('raw authority remains rejected by strict and existing Cloud policies',async()=>{const rows=await x.grants();for(const p of ['migration','runtime'])assert.throws(()=>inspectGrants(rows,database,p));assert.throws(()=>inspectCloudGrants(rows,database,'initial-maintenance'))})
   await t.test('missing/expired approval, drift and interruption refuse without creating a ledger',async()=>{
    const p=await x.phase('initial');await assert.rejects(operatorMigrations(pool,files,manifest,p,'preflight'),/HOSTINGER_WILDCARD_APPROVAL_REQUIRED/)
-   const pre=await operatorMigrations(pool,files,manifest,p,'preflight',context);assert.equal(pre.pending.length,85);assert.equal(pre.exactDatabaseIsolation,false)
+   const pre=await operatorMigrations(pool,files,manifest,p,'preflight',context);assert.equal(pre.pending.length,88);assert.equal(pre.exactDatabaseIsolation,false)
    await assert.rejects(operatorMigrations(pool,files,manifest,p,'apply',{...context,approval:{...pre.approval,expiresAt:Date.now()-1},productionConfirmation:'APPLY-PRODUCTION:'+digest(p),audit:async()=>{}}),/RECENT_APPROVAL/)
    await assert.rejects(operatorMigrations(pool,files,manifest,p,'apply',{...context,approval:pre.approval,productionConfirmation:'APPLY-PRODUCTION:'+digest(p),interrupted:()=>true,audit:async()=>{}}),/INTERRUPTED/)
    await x.transition('SELECT,INSERT,UPDATE,CREATE,ALTER,TRIGGER');await assert.rejects(operatorMigrations(pool,files,manifest,p,'preflight',context),/PRIVILEGE_SET_MISMATCH/);await x.transition('ALL PRIVILEGES')
    assert.equal((await pool.query('SHOW TABLES'))[0].length,0)
   })
   await t.test('all85 raw-grant migrations retain ledger, manifest, disclosure and exact46 definers',async()=>{
-   const {p,audit,result}=await apply(x,true);assert.equal(result.applied.length,85);assert.equal(result.exactDatabaseIsolation,false);assert.ok(audit.some(e=>e.permissionPolicy==='hostinger-wildcard'&&e.exactDatabaseIsolation===false))
+   const {p,audit,result}=await apply(x,true);assert.equal(result.applied.length,88);assert.equal(result.exactDatabaseIsolation,false);assert.ok(audit.some(e=>e.permissionPolicy==='hostinger-wildcard'&&e.exactDatabaseIsolation===false))
    await assert.rejects(operatorMigrations(pool,files,manifest,p,'preflight',context),/INITIAL_EMPTY_ONLY/)
-   const verified=await operatorMigrations(pool,files,manifest,await x.phase('verify'),'verify-complete',context);assert.equal(verified.applied.length,85);assert.equal(verified.permissionPolicyAccepted,true)
+   const verified=await operatorMigrations(pool,files,manifest,await x.phase('verify'),'verify-complete',context);assert.equal(verified.applied.length,88);assert.equal(verified.permissionPolicyAccepted,true)
    const cli=JSON.parse((await command(x,await x.phase('verify'),'verify-complete')).stdout);assert.equal(cli.exactDatabaseIsolation,false);assert.equal(cli.permissionPolicyAccepted,true);assert.equal(cli.verified,undefined)
-   const c=await pool.getConnection();try{await verifySchema(c,manifest,files,85)}finally{c.destroy()}
+   const c=await pool.getConnection();try{await verifySchema(c,manifest,files,88)}finally{c.destroy()}
    const [triggers]=await pool.query('SELECT DEFINER FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()');assert.equal(triggers.length,46);assert.ok(triggers.every(r=>r.DEFINER===account))
   })
   await t.test('reduced raw runtime still has broader scope, ledger and trigger authority but no ALTER/DELETE',async()=>{

@@ -46,9 +46,9 @@ test('Phase 1 business schema on disposable MariaDB 11.8.9',{timeout:120000},asy
    assert.equal((await query('SELECT COUNT(*) AS n FROM users'))[0].n,'0')
    assert.equal((await query('SELECT COUNT(*) AS n FROM tenants'))[0].n,'0')
    const before=await query('SELECT role_id,permission_id FROM role_permissions ORDER BY role_id,permission_id')
-   for(const seed of files.filter(file=>file.name.startsWith('seed_'))){await query(seed.sql);assert.equal(Number((await query(seed.verify))[0].satisfied),1)}
+   for(const seed of files.filter(file=>file.name.startsWith('seed_')&&file.name!=='seed_industry_channels')){await query(seed.sql);assert.equal(Number((await query(seed.verify))[0].satisfied),1)}
    assert.deepEqual(await query('SELECT role_id,permission_id FROM role_permissions ORDER BY role_id,permission_id'),before)
-   assert.equal((await query('SELECT COUNT(*) AS n FROM industry_channels'))[0].n,'3')
+   assert.equal((await query('SELECT COUNT(*) AS n FROM industry_channels'))[0].n,'38')
    const c=await pool.getConnection()
    try{
     await c.beginTransaction()

@@ -1,10 +1,12 @@
+import type {Classification} from '../../backend/src/business/industry-directory'
+
 export type Kind='platform'|'reseller'|'sub_reseller'|'merchant'
 export type Membership={membershipId:string;tenantId:string;kind:Kind;roleId:string;roleCode:string;permissions:string[]}
 export type Me={user:{id:string;publicId:string;email:string;displayName:string};memberships:Membership[];selectedMembership:Membership|null;mfaImplemented:boolean}
-export type Account={id:string;publicId:string;kind:Kind;parentId:string|null;name:string;status:string;effectiveStatus:string;industryChannelId:string|null;lockVersion:number;createdAt:string}
+export type Account={id:string;publicId:string;kind:Kind;parentId:string|null;name:string;status:string;effectiveStatus:string;industryChannelId:string|null;classification?:Classification|null;lockVersion:number;createdAt:string}
 export type Channel={id:string;code:string;name:string;status:string}
 export type ChannelVersion={id:string;version:number;displayName:string;status:string;publicCopy:{title:string}}
-export type Merchant={id:string;name:string;status:string;lockVersion:number;industryChannel:Channel;onboarding:{complete:boolean;checks:Record<string,boolean>;readyBranchCount:string}}
+export type Merchant={id:string;name:string;status:string;lockVersion:number;industryChannel:Channel;classification?:Classification|null;onboarding:{complete:boolean;checks:Record<string,boolean>;readyBranchCount:string}}
 export type Branch={id:string;merchantId:string;industryChannelId:string;code:string;name:string;timezone:string;address:string|null;status:string;lockVersion:number}
 export type Destination={id:string;placeId:string;reviewUrl:string;status:string;lockVersion:number}
 export type ShortLink={id:string;branchId:string;code:string;status:string;lockVersion:number;publicUrl:string}

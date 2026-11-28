@@ -54,9 +54,9 @@ test('managed-hosting alternatives: naming, initial table-only authority and str
   await t.test('strict separate migration account runs all85 unchanged migrations on alphanumeric schema over TLS',async()=>{
    await fixture.admin.query('GRANT SELECT, CREATE, ALTER, TRIGGER ON '+quote(full)+'.* TO '+migration.sql)
    for(const table of ['schema_migrations','industry_channels','roles','permissions','role_permissions'])await fixture.admin.query('GRANT CREATE,INSERT'+(table==='schema_migrations'?',UPDATE':'')+' ON '+quote(full)+'.'+quote(table)+' TO '+migration.sql)
-   const report=await operatorMigrations(m,files,manifest,policy,'preflight');assert.equal(report.pending.length,85)
+   const report=await operatorMigrations(m,files,manifest,policy,'preflight');assert.equal(report.pending.length,88)
    const events=[];const result=await operatorMigrations(m,files,manifest,policy,'apply',{approval:report.approval,audit:async e=>events.push(e)})
-   assert.equal(result.applied.length,85);assert.equal(events.filter(e=>e.event==='step_applied').length,85)
+   assert.equal(result.applied.length,88);assert.equal(events.filter(e=>e.event==='step_applied').length,88)
    const [[shape]]=await m.query('SELECT (SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()) AS tables,(SELECT COUNT(*) FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()) AS triggers')
    assert.equal(Number(shape.tables),32);assert.equal(Number(shape.triggers),46)
   })

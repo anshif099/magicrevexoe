@@ -55,8 +55,8 @@ test('exact collation repair preserves history, rejects unrelated drift and resu
   await executeCronJob(job('resume-preflight'),pool,statePool,env)
   await executeCronJob(job('resume-apply'),pool,statePool,env)
   await assert.rejects(executeCronJob(job('resume-apply'),pool,statePool,env),/ALREADY_ATTEMPTED/)
-  const check=await pool.getConnection();try{await verifySchema(check,manifest,files,85)}finally{check.release()}
-  assert.equal(Number((await pool.query("SELECT COUNT(*) AS n FROM schema_migrations WHERE status='applied'"))[0][0].n),85)
+  const check=await pool.getConnection();try{await verifySchema(check,manifest,files,88)}finally{check.release()}
+  assert.equal(Number((await pool.query("SELECT COUNT(*) AS n FROM schema_migrations WHERE status='applied'"))[0][0].n),88)
   assert.equal(Number((await pool.query('SELECT COUNT(*) AS n FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()'))[0][0].n),46)
   assert.equal((await statePool.query("SELECT COUNT(*) AS n FROM initialization_records WHERE kind='apply.started'"))[0][0].n,1)
  }finally{await pool?.end();await statePool?.end();await f.close()}

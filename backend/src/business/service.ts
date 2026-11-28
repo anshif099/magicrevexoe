@@ -4,7 +4,7 @@ import {HttpError} from '../middleware/error-handler.js'
 import {select} from '../auth/database.js'
 import type {AuthService} from '../auth/service.js'
 import type {Principal} from '../auth/authorization.js'
-import {TenantService,tenantScopeSQL,type TenantActor,type Page,type CreateInput} from '../tenants/service.js'
+import {TenantService,classificationFrom,tenantScopeSQL,type TenantActor,type Page,type CreateInput} from '../tenants/service.js'
 import {canonicalTimezone,validTimezone,destinationInput} from './validation.js'
 import {quotas} from '../subscriptions/quota.js'
 
@@ -60,7 +60,7 @@ export class BusinessService{
   const zones=await select(db,"SELECT b.timezone,COUNT(*) AS n FROM branches b JOIN review_destinations d ON d.tenant_id=b.tenant_id AND d.branch_id=b.id AND d.provider='google' AND d.status='active' WHERE b.tenant_id=? AND b.status='active' GROUP BY b.timezone",[id])
   const ready=zones.reduce((n,z)=>validTimezone(z.timezone)?n+BigInt(z.n):n,0n)
   const checks={accountActive:m.status==='active',channelAssigned:true,channelActive:c.status==='active',administratorActive:admin,publishedChannelAvailable:published,readyBranch:ready>0n}
-  return{id:m.id,publicId:(m.public_id as Buffer).toString('hex'),parentId:m.parent_id,name:m.name,status:m.status,lockVersion:m.lock_version,industryChannel:this.channelDto(c),createdAt:m.created_at,updatedAt:m.updated_at,onboarding:{scope:'merchant_business_setup',complete:Object.values(checks).every(Boolean),checks,readyBranchCount:ready.toString()}}
+  return{id:m.id,publicId:(m.public_id as Buffer).toString('hex'),parentId:m.parent_id,name:m.name,status:m.status,lockVersion:m.lock_version,industryChannel:this.channelDto(c),classification:classificationFrom(m),createdAt:m.created_at,updatedAt:m.updated_at,onboarding:{scope:'merchant_business_setup',complete:Object.values(checks).every(Boolean),checks,readyBranchCount:ready.toString()}}
  },true)}
  async updateProfile(principal:Principal,id:string,input:{name:string;lockVersion:number}){return this.tenants.withActor(principal,async(db,actor)=>{
   const m=await this.merchant(db,actor,id,'tenant.manage')

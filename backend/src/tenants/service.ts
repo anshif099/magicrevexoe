@@ -5,11 +5,16 @@ import { select,transaction,lockPlatform } from '../auth/database.js'
 import { AuthService,normalizeEmail } from '../auth/service.js'
 import type { Membership,Principal,Kind } from '../auth/authorization.js'
 import { opaqueToken,tokenDigest } from '../auth/tokens.js'
+import {categoryFor,type Classification} from '../business/industry-directory.js'
 import type { InvitationDelivery } from './delivery.js'
 
 export type Account = RowDataPacket & {id:string;kind:Kind;parent_id:string|null;status:string;lock_version:number;effective:number}
+export function classificationFrom(row:Account):Classification|null{
+ const stored=row.business_classification
+ return typeof stored==='string'?JSON.parse(stored):stored??null
+}
 export type InviteInput={email:string;displayName:string;roleCode?:string|undefined;resend?:boolean|undefined}
-export type CreateInput={parentId:string;kind:Exclude<Kind,'platform'>;name:string;industryChannelCode?:string|undefined;invitation:InviteInput}
+export type CreateInput={parentId:string;kind:Exclude<Kind,'platform'>;name:string;industryChannelCode?:string|undefined;classification?:Classification|undefined;invitation:InviteInput}
 export type Page={afterId?:string|undefined;limit:number}
 export type TenantActor={member:Membership;principal:Principal}
 type Actor=TenantActor
@@ -20,7 +25,7 @@ export const tenantScopeSQL=`WITH RECURSIVE scope AS (
  UNION ALL SELECT t.id,s.depth+1,(s.effective AND t.status='active') FROM tenants t JOIN scope s ON t.parent_id=s.id WHERE s.depth<3
 )`
 const scope=tenantScopeSQL
-const fields='t.id,t.public_id,t.kind,t.parent_id,t.name,t.status,t.industry_channel_id,t.lock_version,t.created_at,t.updated_at,s.effective'
+const fields='t.id,t.public_id,t.kind,t.parent_id,t.name,t.status,t.industry_channel_id,t.business_classification,t.lock_version,t.created_at,t.updated_at,s.effective'
 
 export class TenantService {
  constructor(private readonly pool:Pool,private readonly auth:AuthService,private readonly delivery?:InvitationDelivery){}
@@ -54,7 +59,7 @@ export class TenantService {
   if(actor.member.kind==='platform')this.auth.authorization.platform(actor.member)
   this.auth.authorization.requirePermission(actor.member,permission)
  }
- private dto(row:Account){return{id:row.id,publicId:(row.public_id as Buffer).toString('hex'),kind:row.kind,parentId:row.parent_id,name:row.name,status:row.status,industryChannelId:row.industry_channel_id,lockVersion:row.lock_version,createdAt:row.created_at,updatedAt:row.updated_at,effectiveStatus:Number(row.effective)?'active':'blocked'}}
+ private dto(row:Account){return{id:row.id,publicId:(row.public_id as Buffer).toString('hex'),kind:row.kind,parentId:row.parent_id,name:row.name,status:row.status,industryChannelId:row.industry_channel_id,classification:classificationFrom(row),lockVersion:row.lock_version,createdAt:row.created_at,updatedAt:row.updated_at,effectiveStatus:Number(row.effective)?'active':'blocked'}}
  private async account(db:PoolConnection,actor:Actor,id:string,permission='tenant.read'):Promise<Account>{
   this.permission(actor,permission)
   const row=(await select<Account>(db,`${scope} SELECT ${fields} FROM tenants t JOIN scope s ON s.id=t.id WHERE t.id=?`,[actor.member.tenantId,id]))[0]
@@ -123,19 +128,32 @@ export class TenantService {
    await this.account(db,actor,input.parentId)
    await this.auth.authorization.provision(actor.member,input.parentId,input.kind,db)
   })
+  const classification=input.classification
+  if(classification){
+   const category=categoryFor(classification.categoryCode)
+   const subcategories=category?.subcategories
+   const sub=subcategories&&Object.hasOwn(subcategories,classification.subcategoryCode)?subcategories[classification.subcategoryCode]:undefined
+   const type=classification.businessTypeCode
+   if(!sub||(type&&!Object.hasOwn(sub.businessTypes,type))||(!type&&Object.keys(sub.businessTypes).length)){
+    throw new HttpError(400,'Invalid business classification')
+   }
+   if(input.kind==='merchant'&&classification.categoryCode!==input.industryChannelCode)throw new HttpError(400,'Invalid industry channel')
+  }else if(input.industryChannelCode&&categoryFor(input.industryChannelCode))throw new HttpError(400,'Business classification is required')
   await this.verifyDelivery()
   const result=await this.actor(principal,async(db,actor)=>{
    this.permission(actor,input.kind==='reseller'?'reseller.create':input.kind==='sub_reseller'?'sub_reseller.create':'merchant.create')
    const parent=await this.account(db,actor,input.parentId)
    await this.auth.authorization.provision(actor.member,parent.id,input.kind,db)
+   if(input.kind!=='merchant'&&input.industryChannelCode)throw new HttpError(400,'Invalid industry channel')
+   const channelCode=input.kind==='merchant'?input.industryChannelCode:classification?.categoryCode
    let channelId:string|null=null
-   if(input.kind==='merchant'){
-    const channel=(await select(db,"SELECT id FROM industry_channels WHERE code=? AND status='active'",[input.industryChannelCode??'']))[0]
+   if(channelCode||input.kind==='merchant'){
+    const channel=(await select(db,"SELECT id FROM industry_channels WHERE code=? AND status='active'",[channelCode??'']))[0]
     if(!channel)throw new HttpError(400,'Invalid industry channel')
-    channelId=channel.id
-   }else if(input.industryChannelCode)throw new HttpError(400,'Invalid industry channel')
+    if(input.kind==='merchant')channelId=channel.id
+   }
    const publicId=randomBytes(16)
-   await db.execute('INSERT INTO tenants(public_id,kind,parent_id,parent_kind,name,industry_channel_id) VALUES (?,?,?,?,?,?)',[publicId,input.kind,parent.id,parent.kind,input.name,channelId])
+   await db.execute('INSERT INTO tenants(public_id,kind,parent_id,parent_kind,name,industry_channel_id,business_classification) VALUES (?,?,?,?,?,?,?)',[publicId,input.kind,parent.id,parent.kind,input.name,channelId,classification?JSON.stringify(classification):null])
    const tenant=(await select<Account>(db,'SELECT *,1 AS effective FROM tenants WHERE public_id=? AND parent_id=?',[publicId,parent.id]))[0]!
    await this.audit(db,actor,tenant.id,'tenant.created',{parentId:parent.id,kind:input.kind})
    // Initial role is derived from the child kind, not request-supplied permissions.

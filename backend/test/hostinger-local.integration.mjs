@@ -43,14 +43,14 @@ test('explicit Hostinger local transport on an owned disposable MariaDB 11.8.9 p
    const env={...operatorEnv};delete env.HOSTINGER_LOCAL_APPROVAL;await failure(pre,/HOSTINGER_LOCAL/,env);assert.equal((await admin.query('SHOW TABLES'))[0].length,0)
   })
   await t.test('non-mutating preflight binds transport reference and independent confirmation',async()=>{
-   await run([...pre,'--report',reportFile]);const report=JSON.parse(await readFile(reportFile));assert.equal(report.initialized,false);assert.equal(report.pending.length,85);assert.equal(report.encrypted,false);assert.equal(report.approvalReference,approvalId);assert.equal((await admin.query('SHOW TABLES'))[0].length,0)
+   await run([...pre,'--report',reportFile]);const report=JSON.parse(await readFile(reportFile));assert.equal(report.initialized,false);assert.equal(report.pending.length,88);assert.equal(report.encrypted,false);assert.equal(report.approvalReference,approvalId);assert.equal((await admin.query('SHOW TABLES'))[0].length,0)
    const apply=['apply','--target',policyFile,'--environment','production','--approval',reportFile,'--audit',join(directory,'missing-confirm.jsonl')];await failure(apply,/PRODUCTION_CONFIRMATION/)
    const changed={...policy,hostingerLocalApprovalId:'TEST-OTHER-APPROVAL-RECORD'};await writeFile(policyFile,JSON.stringify(changed));await failure([...apply,'--confirm-production','APPLY-PRODUCTION:'+digest(changed)],/PREFLIGHT_APPROVAL_MISMATCH/,{...operatorEnv,HOSTINGER_LOCAL_APPROVAL_ID:changed.hostingerLocalApprovalId});assert.equal((await admin.query('SHOW TABLES'))[0].length,0);await writeFile(policyFile,JSON.stringify(policy))
   })
   await t.test('explicit approved CLI creates complete schema and records plaintext transport honestly',async()=>{
    const audit=join(directory,'apply.jsonl');const result=await run(['apply','--target',policyFile,'--environment','production','--approval',reportFile,'--audit',audit,'--confirm-production','APPLY-PRODUCTION:'+digest(policy)])
    assert.ok(result.stdout.includes('execution_completed'));const events=(await readFile(audit,'utf8')).trim().split('\n').map(JSON.parse);const approved=events.find(e=>e.event==='approved_execution_started');assert.equal(approved.transport,'HOSTINGER_LOCAL');assert.equal(approved.approvalReference,approvalId)
-   assert.equal((await admin.query('SHOW TABLES'))[0].length,32);assert.equal((await admin.query('SELECT COUNT(*) AS n FROM schema_migrations'))[0][0].n,'85');assert.equal((await admin.query('SELECT COUNT(*) AS n FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()'))[0][0].n,'46')
+   assert.equal((await admin.query('SHOW TABLES'))[0].length,32);assert.equal((await admin.query('SELECT COUNT(*) AS n FROM schema_migrations'))[0][0].n,'88');assert.equal((await admin.query('SELECT COUNT(*) AS n FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()'))[0][0].n,'46')
   })
   await t.test('local operator retains advisory lock exclusion',async()=>{
    const c=await admin.getConnection(),name='magicreview:migrate:'+createHash('sha256').update(database).digest('hex').slice(0,40)
