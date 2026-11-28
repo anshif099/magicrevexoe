@@ -28,13 +28,15 @@ export function PublicPage({code}:{code:string}){
  const viewed=useRef('')
  useEffect(()=>{const token=load.data?.options.privateFeedback.submissionToken.token;if(!token||viewed.current===token)return;viewed.current=token;void api.public('/public/funnels/'+encodeURIComponent(code)+'/views','POST',{submissionToken:token,requestKey:crypto.randomUUID(),language}).catch(()=>{})},[code,load.data,language])
  function event(name:string){void api.public('/public/funnels/'+encodeURIComponent(code)+'/events','POST',{event:name}).catch(()=>setNotice(publicMessages[language].viewNotice))}
- return <div className="live-root live-public" lang={language}><LiveBrand/><main className="live-public-card"><label className="live-field">{text.language}<select aria-label="Language" value={language} onChange={e=>setLanguage(e.target.value as Language)}>{Object.entries(languageNames).map(([code,name])=><option key={code} value={code}>{name}</option>)}</select></label><LoadState loading={load.loading} error={load.error?text.unavailable:undefined} retry={load.reload}/>{load.error&&<OfflineFallback key={code} code={code} language={language}/>}{load.data&&<><span className="live-eyebrow">{load.data.industryChannel.name}</span>{load.data.merchant.logoDataUrl&&<img src={load.data.merchant.logoDataUrl} alt={load.data.merchant.name} width="96" height="96" style={{objectFit:'contain'}}/>}<h1>{load.data.merchant.name}</h1><p className="live-public-branch">{load.data.branch.name}{load.data.branch.address&&<> · {load.data.branch.address}</>}</p><h2>{language==='en'?load.data.channelVersion.title:text.question}</h2><p>{text.choice}</p><fieldset className="live-rating"><legend>{text.rating}</legend><div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>{[1,2,3,4,5].map(r=><button type="button" key={r} aria-label={r+' '+text.outOf} aria-pressed={presetRating===r} className={presetRating===r?'live-button':'live-quiet-button'} style={{minWidth:'48px',minHeight:'48px'}} onClick={()=>setPresetRating(r)}>{r} ★</button>)}</div></fieldset><div className="live-parallel" aria-label="Independent review options"><a className="live-button" href={load.data.options.googleReview.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" onClick={()=>event('google_option_selected')}>{text.google} ↗</a><button className="live-button" onClick={()=>{setOpen(true);event('private_feedback_option_selected')}}>{text.private}</button></div>{notice&&<Notice>{notice}</Notice>}<DraftForm presetRating={presetRating} key={'draft:'+code+language+load.data.options.privateFeedback.submissionToken.token} code={code} token={load.data.options.privateFeedback.submissionToken.token} language={language} googleUrl={load.data.options.googleReview.url}/>{open&&<PublicFeedback presetRating={presetRating} key={'feedback:'+code+language+load.data.options.privateFeedback.submissionToken?.token} code={code} funnel={load.data} reload={load.reload} language={language}/>}<p className="live-muted">{text.policy}</p></>}</main><p className="live-public-foot">{publicMessages[language].foot}</p></div>
+ return <div className="live-root live-public" lang={language}><LiveBrand/><main className="live-public-card"><label className="live-field">{text.language}<select aria-label="Language" value={language} onChange={e=>setLanguage(e.target.value as Language)}>{Object.entries(languageNames).map(([code,name])=><option key={code} value={code}>{name}</option>)}</select></label><LoadState loading={load.loading} error={load.error?text.unavailable:undefined} retry={load.reload}/>{load.error&&<OfflineFallback key={code} code={code} language={language}/>}{load.data&&<><span className="live-eyebrow">{load.data.industryChannel.name}</span>{load.data.merchant.logoDataUrl&&<img src={load.data.merchant.logoDataUrl} alt={load.data.merchant.name} width="96" height="96" style={{objectFit:'contain'}}/>}<h1>{load.data.merchant.name}</h1><p className="live-public-branch">{load.data.branch.name}{load.data.branch.address&&<> · {load.data.branch.address}</>}</p><h2>{language==='en'?load.data.channelVersion.title:text.question}</h2><p>{text.choice}</p><fieldset className="live-rating"><legend>{text.rating}</legend><div style={{display:'flex',gap:'8px',flexWrap:'wrap'}}>{[1,2,3,4,5].map(r=><button type="button" key={r} aria-label={r+' '+text.outOf} aria-pressed={presetRating===r} className={presetRating===r?'live-button':'live-quiet-button'} style={{minWidth:'48px',minHeight:'48px'}} onClick={()=>setPresetRating(r)}>{r} ★</button>)}</div></fieldset><div className="live-parallel" aria-label="Independent review options"><a className="live-button" href={load.data.options.googleReview.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" onClick={()=>event('google_option_selected')}>{text.google} ↗</a><button className="live-button" onClick={()=>{setOpen(true);event('private_feedback_option_selected')}}>{text.private}</button></div>{notice&&<Notice>{notice}</Notice>}{open&&<PublicFeedback presetRating={presetRating} key={'feedback:'+code+language+load.data.options.privateFeedback.submissionToken?.token} code={code} funnel={load.data} reload={load.reload} language={language}/>}<DraftForm presetRating={presetRating} key={'draft:'+code+language+load.data.options.privateFeedback.submissionToken.token} code={code} token={load.data.options.privateFeedback.submissionToken.token} language={language} googleUrl={load.data.options.googleReview.url}/><p className="live-muted">{text.policy}</p></>}</main><p className="live-public-foot">{publicMessages[language].foot}</p></div>
 }
 export function PublicFeedback({code,funnel,reload,language='en',presetRating}:{code:string;funnel:PublicFunnel;reload:()=>void;language?:Language;presetRating?:number|undefined}){
  const text=publicText[language]
  const [ownOverall,setOwnOverall]=useState<string|undefined>()
  const [busy,setBusy]=useState(false),[confirmation,setConfirmation]=useState(''),[error,setError]=useState(''),[attempted,setAttempted]=useState(false),attempt=useRef<Record<string,string|number>|null>(null)
  const option=funnel.options.privateFeedback
+ const heading=useRef<HTMLHeadingElement>(null)
+ useEffect(()=>{heading.current?.focus()},[])
  async function submit(e:FormEvent<HTMLFormElement>){
   e.preventDefault();if(busy||confirmation)return
   if(!attempt.current){const data=new FormData(e.currentTarget),body:Record<string,string|number>={submissionToken:option.submissionToken.token,language};for(const field of option.fields){const answer=String(data.get(field.name)??'');if(answer)body[field.name]=Number(answer)}attempt.current=body}
@@ -42,5 +44,37 @@ export function PublicFeedback({code,funnel,reload,language='en',presetRating}:{
   try{const result=await api.public<{accepted:boolean;confirmationId:string}>('/public/funnels/'+encodeURIComponent(code)+'/feedback','POST',attempt.current);setConfirmation(result.confirmationId)}catch(e){setError(language==='en'?errorMessage(e):publicMessages[language].feedbackError)}finally{setBusy(false)}
  }
  if(!option.submissionAvailable)return <Notice>{text.submissionUnavailable}</Notice>
- return <section className="live-private-form"><h2>{text.privateTitle}</h2>{confirmation?<Notice>{text.thanks} <strong>{confirmation}</strong></Notice>:<form onSubmit={submit} className="live-form"><fieldset disabled={busy||attempted}>{option.fields.map(field=><div className="live-field" key={field.name}><label htmlFor={'rating-'+field.name}>{language==='en'&&field.label?field.label:({overallRating:text.overall,serviceRating:text.service,cleanlinessRating:text.cleanliness,waitingTimeRating:text.waiting} as Record<string,string>)[field.name]}{!field.required&&' ('+text.optional+')'}</label><select id={'rating-'+field.name} name={field.name} required={field.required} {...(field.name==='overallRating'?{value:ownOverall??String(presetRating??''),onChange:(e:React.ChangeEvent<HTMLSelectElement>)=>setOwnOverall(e.target.value)}:{defaultValue:''})}><option value="">{text.choose}</option>{[1,2,3,4,5].map(r=><option value={r} key={r}>{r} {text.outOf}</option>)}</select></div>)}</fieldset><button className="live-button" disabled={busy} type="submit">{busy?text.sending:attempted?text.retry:text.send}</button>{error&&<Notice error>{error} {text.fixed} <button className="live-text-button" type="button" onClick={reload}>{text.newForm}</button></Notice>}</form>}</section>
+ const labels={overallRating:text.overall,serviceRating:text.service,cleanlinessRating:text.cleanliness,waitingTimeRating:text.waiting}
+ return <section className="live-private-form">
+  <h2 ref={heading} tabIndex={-1}>{text.privateTitle}</h2>
+  {confirmation?<Notice>{text.thanks} <strong>{confirmation}</strong></Notice>:<form onSubmit={submit} className="live-form">
+   <fieldset disabled={busy||attempted}>
+    {option.fields.map(field=>{
+     const label=language==='en'&&field.label?field.label:labels[field.name]
+     if(field.name==='overallRating'){
+      const selected=Number(ownOverall??presetRating??0)
+      return <fieldset className="live-feedback-rating" key={field.name}>
+       <legend>{label}</legend>
+       <div className="live-feedback-stars">
+        {[1,2,3,4,5].map(rating=><label key={rating} className={rating<=selected?'is-filled':undefined}>
+         <input type="radio" name={field.name} value={rating} checked={rating===selected} required
+          aria-label={rating+' '+text.outOf} onChange={()=>setOwnOverall(String(rating))}/>
+         <span aria-hidden="true">{rating<=selected?'?':'?'}</span>
+        </label>)}
+       </div>
+      </fieldset>
+     }
+     return <div className="live-field" key={field.name}>
+      <label htmlFor={'rating-'+field.name}>{label}{!field.required&&' ('+text.optional+')'}</label>
+      <select id={'rating-'+field.name} name={field.name} required={field.required} defaultValue="">
+       <option value="">{text.choose}</option>
+       {[1,2,3,4,5].map(rating=><option value={rating} key={rating}>{rating} {text.outOf}</option>)}
+      </select>
+     </div>
+    })}
+   </fieldset>
+   <button className="live-button" disabled={busy} type="submit">{busy?text.sending:attempted?text.retry:text.send}</button>
+   {error&&<Notice error>{error} {text.fixed} <button className="live-text-button" type="button" onClick={reload}>{text.newForm}</button></Notice>}
+  </form>}
+ </section>
 }
