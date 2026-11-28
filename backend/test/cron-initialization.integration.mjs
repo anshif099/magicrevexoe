@@ -88,7 +88,7 @@ test('cron uses persistent database state through complete guarded migration/boo
   await assert.rejects(executeCronJob(job('check-runtime',runtime),pool,statePool,env))
   await statePool.end();statePool=createPool(stateOptions)
   await assert.rejects(executeCronJob(job('check-runtime',runtime),pool,statePool,env),/ALREADY_ATTEMPTED/)
-  assert.equal(Number((await pool.query('SELECT COUNT(*) AS n FROM schema_migrations'))[0][0].n),88)
+  assert.equal(Number((await pool.query('SELECT COUNT(*) AS n FROM schema_migrations'))[0][0].n),89)
   assert.equal(Number((await pool.query('SELECT COUNT(*) AS n FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()'))[0][0].n),46)
   assert.equal((await fixture.admin.query('SELECT @@global.sql_mode AS mode'))[0][0].mode,'NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION')
   assert.equal(await verifyPassword((await pool.query('SELECT password_hash FROM users'))[0][0].password_hash,ownerPassword),true)
@@ -98,7 +98,7 @@ test('cron uses persistent database state through complete guarded migration/boo
   })
   await assert.rejects(withDatabaseState(statePool,'c'.repeat(64),async state=>{await state.put('apply.started',{attempt:true})}))
   for(const row of (await statePool.query('SELECT payload FROM initialization_records'))[0])assert.equal([password,ownerPassword,fixture.options.password].some(s=>JSON.stringify(row.payload).includes(s)),false)
-  const db=await pool.getConnection();try{await verifySchema(db,manifest,await loadMigrations(new URL('../migrations/',import.meta.url)),88)}finally{db.release()}
+  const db=await pool.getConnection();try{await verifySchema(db,manifest,await loadMigrations(new URL('../migrations/',import.meta.url)),89)}finally{db.release()}
   await assert.rejects(runCronFromEnvironment({INITIALIZATION_CRON_JOB:JSON.stringify(job('apply')),INITIALIZATION_STATE_DB_NAME:database}),/SEPARATE/)
   await assert.rejects(runCronFromEnvironment({INITIALIZATION_CRON_JOB:JSON.stringify(job('apply')),INITIALIZATION_STATE_DB_NAME:database.toUpperCase()}),/SEPARATE/)
   await statePool.query('ALTER TABLE initialization_records ADD COLUMN unexpected INT')

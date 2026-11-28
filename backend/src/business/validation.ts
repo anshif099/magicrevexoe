@@ -1,6 +1,7 @@
 import {z} from 'zod'
 import {HttpError} from '../middleware/error-handler.js'
 import {identifier} from '../auth/tokens.js'
+import {companyDetailsInput} from '../tenants/company-details.js'
 import {categoryFor} from './industry-directory.js'
 
 export function validTimezone(value:string):boolean{
@@ -36,7 +37,7 @@ export const merchantUpdate=z.object({name,lockVersion:version}).strict()
 export const industryChannelCode=z.string().refine(code=>['salon_spa','clinic_healthcare','restaurant_cafe'].includes(code)||Boolean(categoryFor(code)))
 const classificationCode=z.string().min(1).max(120).regex(/^[a-z0-9_]+$/)
 export const classificationInput=z.object({categoryCode:classificationCode,subcategoryCode:classificationCode,businessTypeCode:classificationCode.optional()}).strict()
-export const merchantCreate=z.object({parentId:identifier,name,industryChannelCode,classification:classificationInput.optional(),invitation:z.object({email:z.string().trim().email().max(254),displayName:z.string().trim().min(1).max(120)}).strict()}).strict()
+export const merchantCreate=z.object({parentId:identifier,name,industryChannelCode,classification:classificationInput.optional(),companyDetails:companyDetailsInput.optional(),invitation:z.object({email:z.string().trim().email().max(254),displayName:z.string().trim().min(1).max(120)}).strict()}).strict()
 export const channelUpdate=z.object({name:z.string().trim().min(1).max(100).optional(),status:z.enum(['active','retired']).optional()}).strict().refine(v=>Object.keys(v).length>0)
 export const channelVersionCreate=z.object({version,displayName:z.string().trim().min(1).max(120),title:z.string().trim().min(1).max(120)}).strict()
 export const channelVersionUpdate=channelVersionCreate.omit({version:true}).partial().strict().refine(v=>Object.keys(v).length>0)

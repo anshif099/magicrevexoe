@@ -59,7 +59,7 @@ test('raw Hostinger policy: complete migration, phases, guards, native encrypted
   await t.test('raw authority remains rejected by strict and existing Cloud policies',async()=>{const rows=await x.grants();for(const p of ['migration','runtime'])assert.throws(()=>inspectGrants(rows,database,p));assert.throws(()=>inspectCloudGrants(rows,database,'initial-maintenance'))})
   await t.test('missing/expired approval, drift and interruption refuse without creating a ledger',async()=>{
    const p=await x.phase('initial');await assert.rejects(operatorMigrations(pool,files,manifest,p,'preflight'),/HOSTINGER_WILDCARD_APPROVAL_REQUIRED/)
-   const pre=await operatorMigrations(pool,files,manifest,p,'preflight',context);assert.equal(pre.pending.length,88);assert.equal(pre.exactDatabaseIsolation,false)
+   const pre=await operatorMigrations(pool,files,manifest,p,'preflight',context);assert.equal(pre.pending.length,89);assert.equal(pre.exactDatabaseIsolation,false)
    await assert.rejects(operatorMigrations(pool,files,manifest,p,'apply',{...context,approval:{...pre.approval,expiresAt:Date.now()-1},productionConfirmation:'APPLY-PRODUCTION:'+digest(p),audit:async()=>{}}),/RECENT_APPROVAL/)
    await assert.rejects(operatorMigrations(pool,files,manifest,p,'apply',{...context,approval:pre.approval,productionConfirmation:'APPLY-PRODUCTION:'+digest(p),interrupted:()=>true,audit:async()=>{}}),/INTERRUPTED/)
    await x.transition('SELECT,INSERT,UPDATE,CREATE,ALTER,TRIGGER');await assert.rejects(operatorMigrations(pool,files,manifest,p,'preflight',context),/PRIVILEGE_SET_MISMATCH/);await x.transition('ALL PRIVILEGES')
@@ -78,20 +78,20 @@ test('raw Hostinger policy: complete migration, phases, guards, native encrypted
    const dir=await privateDirectory(),report=join(dir,'upgrade-preflight.json'),log=join(dir,'upgrade-apply.jsonl')
    try{
     await command(x,upgrade,'preflight',['--report',report])
-    assert.deepEqual(JSON.parse(await readFile(report,'utf8')).pending,['000085','000086','000087'])
+    assert.deepEqual(JSON.parse(await readFile(report,'utf8')).pending,['000085','000086','000087','000088'])
     await command(x,upgrade,'apply',['--approval',report,'--audit',log,'--confirm-production','APPLY-PRODUCTION:'+digest(upgrade)])
     audit.push(...(await readFile(log,'utf8')).trim().split('\n').map(line=>JSON.parse(line)))
    }finally{await unlink(report);await unlink(log);await rmdir(dir)}
    assert.equal(audit.at(-1).event,'execution_completed')
-   assert.deepEqual(audit.filter(e=>e.event==='step_applied').map(e=>e.version),['000085','000086','000087'])
+   assert.deepEqual(audit.filter(e=>e.event==='step_applied').map(e=>e.version),['000085','000086','000087','000088'])
    const [after]=await pool.query("SELECT * FROM schema_migrations WHERE version<='000084' ORDER BY version")
    assert.deepEqual(after,before)
    assert.equal(Number((await pool.query('SELECT COUNT(*) AS n FROM industry_channels'))[0][0].n),38)
 
    await assert.rejects(operatorMigrations(pool,files,manifest,upgrade,'preflight',context),/UNEXPECTED_UPGRADE_PREFIX/)
-   const verified=await operatorMigrations(pool,files,manifest,await x.phase('verify'),'verify-complete',context);assert.equal(verified.applied.length,88);assert.equal(verified.permissionPolicyAccepted,true)
+   const verified=await operatorMigrations(pool,files,manifest,await x.phase('verify'),'verify-complete',context);assert.equal(verified.applied.length,89);assert.equal(verified.permissionPolicyAccepted,true)
    const cli=JSON.parse((await command(x,await x.phase('verify'),'verify-complete')).stdout);assert.equal(cli.exactDatabaseIsolation,false);assert.equal(cli.permissionPolicyAccepted,true);assert.equal(cli.verified,undefined)
-   const c=await pool.getConnection();try{await verifySchema(c,manifest,files,88)}finally{c.destroy()}
+   const c=await pool.getConnection();try{await verifySchema(c,manifest,files,89)}finally{c.destroy()}
    const [triggers]=await pool.query('SELECT DEFINER FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()');assert.equal(triggers.length,46);assert.ok(triggers.every(r=>r.DEFINER===account))
   })
   await t.test('reduced raw runtime still has broader scope, ledger and trigger authority but no ALTER/DELETE',async()=>{

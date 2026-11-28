@@ -43,10 +43,10 @@ test('HTTPS setup dispatches explicit jobs through real operator and bootstrap C
     if(status!==200)throw Error('Guarded HTTPS setup refused')
    }finally{await new Promise(r=>server.close(r))}
   }
-  await job('preflight');assert.equal(JSON.parse(await readFile(join(state,'preflight.json'))).pending.length,88)
+  await job('preflight');assert.equal(JSON.parse(await readFile(join(state,'preflight.json'))).pending.length,89)
   assert.equal(Number((await fixture.admin.query('SELECT COUNT(*) AS n FROM information_schema.TABLES WHERE TABLE_SCHEMA=?',[database]))[0][0].n),0)
   await job('apply');await assert.rejects(job('apply'))
-  assert.equal(Number((await fixture.admin.query(`SELECT COUNT(*) AS n FROM ${q(database)}.schema_migrations WHERE status='applied'`))[0][0].n),88)
+  assert.equal(Number((await fixture.admin.query(`SELECT COUNT(*) AS n FROM ${q(database)}.schema_migrations WHERE status='applied'`))[0][0].n),89)
   assert.equal(Number((await fixture.admin.query('SELECT COUNT(*) AS n FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=?',[database]))[0][0].n),46)
   const bootstrap={...policy,expectedAccount:'root@localhost',allowedTriggerDefiners:[user+'@localhost']}
   // No email input: the configured fixed owner must flow through job and CLI.

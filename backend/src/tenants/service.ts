@@ -6,6 +6,7 @@ import { AuthService,normalizeEmail } from '../auth/service.js'
 import type { Membership,Principal,Kind } from '../auth/authorization.js'
 import { opaqueToken,tokenDigest } from '../auth/tokens.js'
 import {categoryFor,type Classification} from '../business/industry-directory.js'
+import type {CompanyDetails} from './company-details.js'
 import type { InvitationDelivery } from './delivery.js'
 
 export type Account = RowDataPacket & {id:string;kind:Kind;parent_id:string|null;status:string;lock_version:number;effective:number}
@@ -14,7 +15,7 @@ export function classificationFrom(row:Account):Classification|null{
  return typeof stored==='string'?JSON.parse(stored):stored??null
 }
 export type InviteInput={email:string;displayName:string;roleCode?:string|undefined;resend?:boolean|undefined}
-export type CreateInput={parentId:string;kind:Exclude<Kind,'platform'>;name:string;industryChannelCode?:string|undefined;classification?:Classification|undefined;invitation:InviteInput}
+export type CreateInput={parentId:string;kind:Exclude<Kind,'platform'>;name:string;industryChannelCode?:string|undefined;classification?:Classification|undefined;companyDetails?:CompanyDetails|undefined;invitation:InviteInput}
 export type Page={afterId?:string|undefined;limit:number}
 export type TenantActor={member:Membership;principal:Principal}
 type Actor=TenantActor
@@ -58,7 +59,7 @@ export class TenantService {
   if(actor.member.kind==='platform')this.auth.authorization.platform(actor.member)
   this.auth.authorization.requirePermission(actor.member,permission)
  }
- private dto(row:Account){return{id:row.id,publicId:(row.public_id as Buffer).toString('hex'),kind:row.kind,parentId:row.parent_id,name:row.name,status:row.status,industryChannelId:row.industry_channel_id,classification:classificationFrom(row),lockVersion:row.lock_version,createdAt:row.created_at,updatedAt:row.updated_at,effectiveStatus:Number(row.effective)?'active':'blocked'}}
+ private dto(row:Account,includeCompanyDetails=false){return{id:row.id,publicId:(row.public_id as Buffer).toString('hex'),kind:row.kind,parentId:row.parent_id,name:row.name,status:row.status,industryChannelId:row.industry_channel_id,classification:classificationFrom(row),...(includeCompanyDetails?{companyDetails:typeof row.company_details==='string'?JSON.parse(row.company_details):row.company_details??null,companyDetailsAvailable:row.company_details!==undefined}:{}),lockVersion:row.lock_version,createdAt:row.created_at,updatedAt:row.updated_at,effectiveStatus:Number(row.effective)?'active':'blocked'}}
  private async account(db:PoolConnection,actor:Actor,id:string,permission='tenant.read'):Promise<Account>{
   this.permission(actor,permission)
   const row=(await select<Account>(db,`${scope} SELECT t.*,s.effective FROM tenants t JOIN scope s ON s.id=t.id WHERE t.id=?`,[actor.member.tenantId,id]))[0]
@@ -153,7 +154,12 @@ export class TenantService {
    }
    const publicId=randomBytes(16)
    const tenantValues=[publicId,input.kind,parent.id,parent.kind,input.name,channelId]
-   if(classification){
+   if(input.companyDetails&&parent.company_details===undefined)throw new HttpError(409,'Company details require the database upgrade')
+   if(input.companyDetails){
+    const columns=classification?'company_details,business_classification':'company_details'
+    const metadata=classification?[JSON.stringify(input.companyDetails),JSON.stringify(classification)]:[JSON.stringify(input.companyDetails)]
+    await db.execute(`INSERT INTO tenants(public_id,kind,parent_id,parent_kind,name,industry_channel_id,${columns}) VALUES (?,?,?,?,?,?,?${classification?',?':''})`,[...tenantValues,...metadata])
+   }else if(classification){
     await db.execute('INSERT INTO tenants(public_id,kind,parent_id,parent_kind,name,industry_channel_id,business_classification) VALUES (?,?,?,?,?,?,?)',[...tenantValues,JSON.stringify(classification)])
    }else{
     await db.execute('INSERT INTO tenants(public_id,kind,parent_id,parent_kind,name,industry_channel_id) VALUES (?,?,?,?,?,?)',tenantValues)
@@ -162,7 +168,7 @@ export class TenantService {
    await this.audit(db,actor,tenant.id,'tenant.created',{parentId:parent.id,kind:input.kind})
    // Initial role is derived from the child kind, not request-supplied permissions.
    const invite=await this.invitation(db,actor,tenant,{email:input.invitation.email,displayName:input.invitation.displayName})
-   return{tenant:this.dto(tenant),invite}
+   return{tenant:this.dto(tenant,true),invite}
   })
   return{tenant:result.tenant,invitation:await this.send(principal,result.tenant.id,result.invite)}
  }
@@ -174,19 +180,22 @@ export class TenantService {
    const parentState=target?(await this.account(db,actor,target)).effective:1
    const result=await select<Account>(db,`${scope} SELECT t.*,s.effective FROM tenants t JOIN scope s ON s.id=t.id WHERE t.id>? ${target?'AND t.id<>?':''} ORDER BY t.id LIMIT ?`,[anchor,page.afterId??'0',...(target?[anchor]:[]),page.limit])
    for(const row of result)if(!Number(parentState))row.effective=0
-   return{accounts:result.map(row=>this.dto(row)),nextCursor:result.length===page.limit?result.at(-1)!.id:null}
+   return{accounts:result.map(row=>this.dto(row)),nextCursor:result.length===page.limit?result.at(-1)!.id:null,companyDetailsAvailable:result.some(row=>row.company_details!==undefined)}
   },true)
  }
- async get(principal:Principal,id:string){return this.actor(principal,async(db,actor)=>this.dto(await this.account(db,actor,id)),true)}
- async update(principal:Principal,id:string,input:{name:string;lockVersion:number}){
+ async get(principal:Principal,id:string){return this.actor(principal,async(db,actor)=>this.dto(await this.account(db,actor,id),true),true)}
+ async update(principal:Principal,id:string,input:{name:string;lockVersion:number;companyDetails?:CompanyDetails|null|undefined}){
   return this.actor(principal,async(db,actor)=>{
    const row=await this.account(db,actor,id,'tenant.manage')
    await this.auth.authorization.ancestors(id,db)
    if(row.lock_version!==input.lockVersion)throw new HttpError(409,'Account version conflict')
-   const [changed]=await db.execute<ResultSetHeader>('UPDATE tenants SET name=?,lock_version=lock_version+1 WHERE id=? AND parent_id<=>? AND lock_version=?',[input.name,id,row.parent_id,input.lockVersion])
+   const updateDetails=input.companyDetails!==undefined
+   if(updateDetails&&row.company_details===undefined)throw new HttpError(409,'Company details require the database upgrade')
+   const companyValues=updateDetails?[input.companyDetails?JSON.stringify(input.companyDetails):null]:[]
+   const [changed]=await db.execute<ResultSetHeader>(`UPDATE tenants SET name=?${updateDetails?',company_details=?':''},lock_version=lock_version+1 WHERE id=? AND parent_id<=>? AND lock_version=?`,[input.name,...companyValues,id,row.parent_id,input.lockVersion])
    if(changed.affectedRows!==1)throw new HttpError(409,'Account version conflict')
-   await this.audit(db,actor,id,'tenant.updated',{nameChanged:true})
-   return this.dto(await this.account(db,actor,id))
+   await this.audit(db,actor,id,'tenant.updated',{nameChanged:true,companyDetailsChanged:updateDetails})
+   return this.dto(await this.account(db,actor,id),true)
   })
  }
  async status(principal:Principal,id:string,desired:'active'|'suspended'|'closed',lockVersion:number){

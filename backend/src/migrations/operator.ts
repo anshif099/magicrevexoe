@@ -92,7 +92,8 @@ export async function operatorMigrations(pool:Pool,files:Migration[],manifest:Sc
    }
    if(wildcard?.phase==='upgrade'&&!approval){
     const lastApplied=files[count-1]?.version
-    if(lastApplied!=='000084'||files.slice(count).map(file=>file.version).join(',')!=='000085,000086,000087')throw new MigrationError('HOSTINGER_WILDCARD_UNEXPECTED_UPGRADE_PREFIX')
+    const pending=files.slice(count).map(file=>file.version).join(',')
+    if(!((lastApplied==='000084'&&['000085,000086,000087','000085,000086,000087,000088'].includes(pending))||(lastApplied==='000087'&&pending==='000088')))throw new MigrationError('HOSTINGER_WILDCARD_UNEXPECTED_UPGRADE_PREFIX')
    }
    const shape=await verifySchema(db,manifest,files,count)
    const [triggers]=await db.query<RowDataPacket[]>('SELECT DEFINER FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()')

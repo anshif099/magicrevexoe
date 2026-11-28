@@ -3,7 +3,8 @@ import type {Classification} from '../../backend/src/business/industry-directory
 export type Kind='platform'|'reseller'|'sub_reseller'|'merchant'
 export type Membership={membershipId:string;tenantId:string;kind:Kind;roleId:string;roleCode:string;permissions:string[]}
 export type Me={user:{id:string;publicId:string;email:string;displayName:string};memberships:Membership[];selectedMembership:Membership|null;mfaImplemented:boolean}
-export type Account={id:string;publicId:string;kind:Kind;parentId:string|null;name:string;status:string;effectiveStatus:string;industryChannelId:string|null;classification?:Classification|null;lockVersion:number;createdAt:string}
+export type CompanyDetails=Partial<Record<'legalName'|'registrationNumber'|'address'|'city'|'state'|'postalCode'|'country'|'phone'|'website',string>>
+export type Account={id:string;publicId:string;kind:Kind;parentId:string|null;name:string;status:string;effectiveStatus:string;industryChannelId:string|null;classification?:Classification|null;companyDetails?:CompanyDetails|null;companyDetailsAvailable?:boolean;lockVersion:number;createdAt:string}
 export type Channel={id:string;code:string;name:string;status:string}
 export type ChannelVersion={id:string;version:number;displayName:string;status:string;publicCopy:{title:string}}
 export type Merchant={id:string;name:string;status:string;lockVersion:number;industryChannel:Channel;classification?:Classification|null;onboarding:{complete:boolean;checks:Record<string,boolean>;readyBranchCount:string}}

@@ -96,6 +96,20 @@ test('merchant business APIs on disposable MariaDB 11.8.9',{timeout:120000},asyn
     assert.deepEqual(saved.body.classification,classification)
    }
   })
+  await t.test('company details are saved at registration, readable in scope and editable with a current version',async()=>{
+   const companyDetails={legalName:'Example Company',address:'10 Example Road',city:'Kochi',country:'India',website:'https://example.invalid',registrationNumber:'EXAMPLE-01'}
+   const invitation={email:'company-details@example.invalid',displayName:'Company admin'}
+   const created=await request('POST','/merchants','reseller',{parentId:reseller,name:'Example Company',industryChannelCode:'salon_spa',companyDetails,invitation})
+   assert.equal(created.status,201)
+   const {id,lockVersion}=created.body.tenant
+   const path='/tenants/'+id
+   assert.deepEqual((await request('GET',path,'reseller')).body.companyDetails,companyDetails)
+   assert.equal((await request('GET',path,'peer')).status,404)
+   const updated={name:'Example Company',lockVersion,companyDetails:{...companyDetails,city:'Kottayam'}}
+   assert.equal((await request('PATCH',path,'reseller',updated)).status,200)
+   assert.equal((await request('PATCH',path,'reseller',updated)).status,409)
+   assert.deepEqual((await request('GET',path,'reseller')).body.companyDetails,updated.companyDetails)
+  })
   await t.test('merchant profiles and branches respect every account hierarchy and peer boundary',async()=>{
    for(const actor of ['super','reseller','sub','merchant','staff'])assert.equal((await request('GET','/merchants/'+merchant,actor)).status,200)
    for(const actor of ['peer','other'])assert.equal((await request('GET','/merchants/'+merchant,actor)).status,404)

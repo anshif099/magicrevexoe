@@ -6,16 +6,17 @@ import { identifier } from '../auth/tokens.js'
 import { RateLimiter } from '../auth/routes.js'
 import { HttpError } from '../middleware/error-handler.js'
 import {classificationInput,industryChannelCode} from '../business/validation.js'
+import {companyDetailsInput} from './company-details.js'
 import type { TenantService } from './service.js'
 
 const email=z.string().trim().email().max(254)
 const person=z.object({email,displayName:z.string().trim().min(1).max(120)}).strict()
 const invitation=person.extend({roleCode:z.enum(['reseller_admin','sub_reseller_admin','merchant_admin','merchant_staff']).optional(),resend:z.boolean().optional()}).strict()
-const create=z.object({parentId:identifier,kind:z.enum(['reseller','sub_reseller','merchant']),name:z.string().trim().min(1).max(160),industryChannelCode:industryChannelCode.optional(),classification:classificationInput.optional(),invitation:person}).strict().superRefine((value,context)=>{
+const create=z.object({parentId:identifier,kind:z.enum(['reseller','sub_reseller','merchant']),name:z.string().trim().min(1).max(160),industryChannelCode:industryChannelCode.optional(),classification:classificationInput.optional(),companyDetails:companyDetailsInput.optional(),invitation:person}).strict().superRefine((value,context)=>{
  if((value.kind==='merchant')!==Boolean(value.industryChannelCode))context.addIssue({code:'custom',message:'Invalid industry channel'})
 })
 const version=z.number().int().positive().max(4294967294)
-const update=z.object({name:z.string().trim().min(1).max(160),lockVersion:version}).strict()
+const update=z.object({name:z.string().trim().min(1).max(160),lockVersion:version,companyDetails:companyDetailsInput.nullable().optional()}).strict()
 const status=z.object({lockVersion:version}).strict()
 const page=z.object({afterId:identifier.optional(),limit:z.coerce.number().int().min(1).max(100).default(50)}).strict()
 function parse<T>(schema:z.ZodType<T>,value:unknown):T{const result=schema.safeParse(value);if(!result.success)throw new HttpError(400,'Invalid request');return result.data}

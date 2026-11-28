@@ -40,9 +40,9 @@ test('approved migration safety and least privilege on disposable MariaDB 11.8.9
    const [grants]=await fixture.admin.query("SELECT Db FROM mysql.db WHERE User='PUBLIC' AND Db LIKE 'test%'");for(const row of grants)await fixture.admin.query('REVOKE ALL PRIVILEGES ON '+quote(row.Db)+'.* FROM PUBLIC')
   })
   await t.test('fresh read-only preflight creates no tables/ledger or seed data; scoped migration account succeeds',async()=>{
-   complete=await database();const report=await pre(complete);assert.equal(report.initialized,false);assert.equal(report.pending.length,88)
+   complete=await database();const report=await pre(complete);assert.equal(report.initialized,false);assert.equal(report.pending.length,89)
    assert.equal((await query(complete.admin,'SHOW TABLES')).length,0)
-   const {result,events}=await apply(complete);assert.equal(result.applied.length,88);assert.equal(events.filter(e=>e.event==='step_applied').length,88)
+   const {result,events}=await apply(complete);assert.equal(result.applied.length,89);assert.equal(events.filter(e=>e.event==='step_applied').length,89)
    assert.equal((await query(complete.admin,'SELECT COUNT(*) AS n FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA=DATABASE()'))[0].n,'46')
    const before=await query(complete.admin,'SELECT * FROM schema_migrations ORDER BY version');assert.deepEqual((await pre(complete)).pending,[]);assert.deepEqual(await query(complete.admin,'SELECT * FROM schema_migrations ORDER BY version'),before)
   })
@@ -106,7 +106,7 @@ test('approved migration safety and least privilege on disposable MariaDB 11.8.9
    const report=await cli('preflight',['--report',approvalFile]);assert.equal(report.code,0);assert.deepEqual(JSON.parse(await readFile(approvalFile,'utf8')),JSON.parse(report.stdout));assert.equal((await query(x.admin,'SHOW TABLES')).length,0)
    assert.equal((await cli('preflight',['--report',approvalFile])).code,1)
    const result=await cli('apply',['--approval',approvalFile,'--audit',audit]);assert.equal(result.code,0,result.stderr)
-   const records=(await readFile(audit,'utf8')).trim().split('\n').map(line=>JSON.parse(line));assert.equal(records.filter(e=>e.event==='step_applied').length,88);assert.equal(records.at(-1).event,'execution_completed');assert.ok(records[0].approvalDigest)
+   const records=(await readFile(audit,'utf8')).trim().split('\n').map(line=>JSON.parse(line));assert.equal(records.filter(e=>e.event==='step_applied').length,89);assert.equal(records.at(-1).event,'execution_completed');assert.ok(records[0].approvalDigest)
    assert.equal((await cli('apply',['--approval',approvalFile,'--audit',audit])).code,1)
   })
   await t.test('postcondition failure remains durable and explicit forward repair preserves checksums/history',async()=>{
