@@ -1,6 +1,6 @@
 /* oxlint-disable react/only-export-components -- Typed UI helpers are intentionally colocated with components. */
 import {useState} from 'react'
-import {api} from './api'
+import {api,ApiError} from './api'
 import {CompanyDetailsFields,CompanyDetailsView,readCompanyDetails} from './company-details'
 import {IndustryFields,IndustrySubcategories} from './industry'
 import {categoryFor,industryDirectory,labelsFor} from '../../backend/src/business/industry-directory'
@@ -31,6 +31,7 @@ export function AccountsPage(){
  {!!kinds.length&&<section className="live-card"><h2>Create an account</h2><p>Merchant creation starts onboarding and invites its administrator.</p><ActionForm label="Create account" onSubmit={async data=>{
   const input={parentId:value(data,'parentId'),name:value(data,'name'),companyDetails:readCompanyDetails(data),invitation:{email:value(data,'email'),displayName:value(data,'displayName')}}
   const categoryCode=value(data,'industryChannelCode')
+  if(categoryCode&&!channels.data?.channels.some(channel=>channel.code===categoryCode&&channel.status==='active'))throw new ApiError(409,'This industry is available to preview. Select an active industry to create the account.')
   const classification=categoryFor(categoryCode)?{categoryCode,subcategoryCode:value(data,'subcategoryCode'),businessTypeCode:value(data,'businessTypeCode')||undefined}:undefined
   const result=await api.request<{tenant:Account;invitation:{deliveryStatus:string}}>(kind==='merchant'?'/merchants':'/tenants','POST',{...input,classification,...(kind==='merchant'?{industryChannelCode:categoryCode}:{kind})})
   changed();setSelected(result.tenant.id)

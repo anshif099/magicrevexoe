@@ -1,25 +1,30 @@
 ﻿import {useState} from 'react'
-import {categoryFor} from '../../backend/src/business/industry-directory'
-import {Field} from './ui'
+import {categoryFor,industryDirectory} from '../../backend/src/business/industry-directory'
+import {Field,Notice} from './ui'
 import type {Channel} from './types'
 
 export function IndustryFields({channels,merchant}:{channels:Channel[];merchant:boolean}){
  const [categoryCode,setCategoryCode]=useState('')
  const [subcategoryCode,setSubcategoryCode]=useState('')
- const available=channels.filter(channel=>merchant||categoryFor(channel.code))
+ const active=new Map(channels.filter(channel=>channel.status==='active').map(channel=>[channel.code,channel]))
+ const legacy=merchant?[...active.values()].filter(channel=>!categoryFor(channel.code)):[]
+ const directory=Object.entries(industryDirectory)
+ const hasActiveDirectory=directory.some(([code])=>active.has(code))
+ const pending=!!categoryCode&&!active.has(categoryCode)
  const category=categoryFor(categoryCode)
  const types=Object.entries(category?.subcategories[subcategoryCode]?.businessTypes??{})
- if(!merchant&&!available.length)return null
  return <>
   <Field label={merchant?'Industry channel':'Industry category'} name="industryChannelCode">
-   <select name="industryChannelCode" required value={categoryCode} onChange={event=>{
+   <select name="industryChannelCode" required={merchant||hasActiveDirectory} value={categoryCode} onChange={event=>{
     setCategoryCode(event.target.value)
     setSubcategoryCode('')
    }}>
     <option value="">Choose an industry</option>
-    {available.map(channel=><option key={channel.id} value={channel.code}>{channel.name}</option>)}
+    {directory.map(([code,entry])=><option key={code} value={code}>{active.get(code)?.name??entry.name}{!active.has(code)&&' (preview)'}</option>)}
+    {legacy.map(channel=><option key={channel.id} value={channel.code}>{channel.name}</option>)}
    </select>
   </Field>
+  {pending&&<Notice>This category can be previewed here. Select an active industry to create the account.</Notice>}
   <Field label="Subcategory" name="subcategoryCode">
    <select name="subcategoryCode" disabled={!category} required={!!category} value={subcategoryCode} onChange={event=>setSubcategoryCode(event.target.value)}>
     <option value="">Choose a subcategory</option>
