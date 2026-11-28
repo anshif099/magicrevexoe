@@ -65,6 +65,7 @@ export class AuthService {
     return result
   }
   async manageMfa(principal:Principal,password:string,code:string,disable=false){
+    if(principal.identity.supportTenant)throw new HttpError(403,'Access denied')
     const result=await transaction(this.pool,async db=>{
       const user=await this.lockedUser(db,principal.identity.sub);this.usable(user)
       const session=(await select(db,'SELECT id FROM auth_sessions WHERE id=? AND user_id=? AND revoked_at IS NULL AND expires_at>UTC_TIMESTAMP(6) AND auth_version=? AND mfa_verified=TRUE AND challenge_only=FALSE',[principal.identity.sid,user.id,user.auth_version]))[0]
@@ -191,7 +192,7 @@ export class AuthService {
       WHERE u.id=? AND s.id=? AND s.revoked_at IS NULL AND s.expires_at>UTC_TIMESTAMP(6)`,[identity.sub,identity.sid]))[0]
     if (!row || row.challenge_only || (await this.requiresMfa(this.pool,identity.sub)&&(!row.mfa_verified||identity.amr.length!==2)) || row.status!=='active' || !row.email_verified_at || row.auth_version!==identity.av || row.session_version!==identity.av) throw new HttpError(401,'Authentication required')
     const principal: Principal = {identity}
-    if (identity.mid) principal.membership = await this.authorization.membership(identity.sub,identity.mid)
+    if (identity.mid) principal.membership = await this.authorization.workspaceMembership(identity)
     return principal
   }
   authentication(): RequestHandler {
@@ -202,7 +203,19 @@ export class AuthService {
       next()
     }
   }
+  async supportWorkspace(principal: Principal, tenantId: string) {
+    if (!principal.membership || principal.identity.supportTenant) throw new HttpError(403,'Access denied')
+    this.authorization.platform(principal.membership)
+    const identity = {...principal.identity,supportTenant:tenantId}
+    await transaction(this.pool,async connection=>{
+      const scoped = await this.authorization.workspaceMembership(identity,connection)
+      await connection.execute(`INSERT INTO audit_logs(event_id,tenant_id,actor_user_id,actor_tenant_id,actor_membership_id,action,resource_type,resource_id,request_id,outcome,safe_metadata)
+        VALUES (?,?,?,?,?,'auth.support_workspace_opened','tenant',?,?,'success','{}')`,[randomBytes(16),scoped.tenantId,identity.sub,scoped.supportActorTenantId!,scoped.membershipId,scoped.tenantId,randomBytes(16)])
+    })
+    return {accessToken:await this.tokens.issue(identity),tokenType:'Bearer',expiresIn:300}
+  }
   async selectTenant(principal: Principal, membershipId: string) {
+    if(principal.identity.supportTenant)throw new HttpError(403,'Access denied')
     await this.authenticate(await this.tokens.issue(principal.identity))
     const member = await this.authorization.membership(principal.identity.sub,membershipId)
     await transaction(this.pool,c=>this.audit(c,principal.identity.sub,'auth.select_tenant',member))

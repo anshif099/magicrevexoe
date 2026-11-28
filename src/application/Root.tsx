@@ -9,8 +9,8 @@ import {FeedbackPage} from './feedback'
 import {MerchantPage} from './merchant'
 import {PublicPage} from './public'
 import {has,kindName,type Membership,type Statistics} from './types'
-import {Link,LiveBrand,usePath} from './navigation'
-import {LoadState,Notice,PageTitle,useLoad} from './ui'
+import {Link,LiveBrand,navigate,usePath} from './navigation'
+import {ActionForm,LoadState,Notice,PageTitle,useLoad} from './ui'
 import './live.css'
 
 export function navigationFor(member:Membership){
@@ -29,14 +29,14 @@ function Workspace({path}:{path:string}){
  let content
  if(path==='/app')content=<Overview/>
  else if(path==='/app/catalog'&&member.kind==='platform'&&member.roleCode==='super_admin')content=<CatalogPanel/>
- else if(path==='/app/profile')content=<><PageTitle title="Your profile"/><section className="live-card"><h2>{auth.me.user.displayName}</h2><p>{auth.me.user.email}</p><p>{kindName[member.kind]} · {member.roleCode.replaceAll('_',' ')}</p><button className="live-quiet-button" onClick={()=>setSwitching(true)}>Switch workspace</button>{member.kind==='platform'&&!auth.me.mfaImplemented&&<Notice>MFA is not implemented. Follow the platform access restrictions in your deployment policy.</Notice>}</section></>
+ else if(path==='/app/profile')content=<><PageTitle title="Your profile"/><section className="live-card"><h2>{auth.me.user.displayName}</h2><p>{auth.me.user.email}</p><p>{kindName[member.kind]} · {member.roleCode.replaceAll('_',' ')}</p>{!member.supportActorTenantId&&<button className="live-quiet-button" onClick={()=>setSwitching(true)}>Switch workspace</button>}{member.kind==='platform'&&!auth.me.mfaImplemented&&<Notice>MFA is not implemented. Follow the platform access restrictions in your deployment policy.</Notice>}</section></>
  else if(path==='/app/accounts'&&links.some(n=>n.path===path))content=<AccountsPage/>
  else if(path==='/app/channels'&&has(member,'tenant.read'))content=<ChannelsPage/>
  else if(path==='/app/feedback'&&has(member,'feedback.read'))content=<FeedbackPage/>
  else if(path==='/app/business'&&member.kind==='merchant'&&has(member,'tenant.read'))content=<MerchantPage id={member.tenantId}/>
  else if(match&&has(member,'tenant.read')&&(member.kind!=='merchant'||member.tenantId===match[1]))content=<MerchantPage id={match[1]}/>
  else content=<Notice error>This page is not available in your selected workspace. <Link href="/app">Return to overview</Link></Notice>
- return <div className="live-root live-workspace"><a className="skip-link" href="#workspace-main">Skip to workspace</a><header className="live-header"><LiveBrand/><div><span>{auth.me.user.displayName}</span><button className="live-quiet-button" onClick={()=>setSwitching(true)}>Switch workspace</button><button className="live-quiet-button" disabled={loggingOut} onClick={async()=>{setLoggingOut(true);try{await auth.logout()}finally{setLoggingOut(false)}}}>{loggingOut?'Signing out…':'Sign out'}</button></div></header><div className="live-layout"><aside className="live-sidebar"><span className="live-eyebrow">{kindName[member.kind]}</span><nav aria-label="Workspace navigation">{links.map(link=><Link key={link.path} href={link.path} aria-current={path===link.path?'page':undefined}>{link.label}</Link>)}</nav><p>Good experiences.<br/>Great reputations.</p></aside><main id="workspace-main" tabIndex={-1} key={member.membershipId+':'+path}>{content}</main></div></div>
+ return <div className="live-root live-workspace"><a className="skip-link" href="#workspace-main">Skip to workspace</a><header className="live-header"><LiveBrand/><div><span>{auth.me.user.displayName}</span>{member.supportActorTenantId?<><span>Support workspace ? Account {member.tenantId}</span><ActionForm label="Return to Super Admin" onSubmit={async()=>{await auth.exitSupportWorkspace();navigate('/app/accounts')}}/></>:<button className="live-quiet-button" onClick={()=>setSwitching(true)}>Switch workspace</button>}<button className="live-quiet-button" disabled={loggingOut} onClick={async()=>{setLoggingOut(true);try{await auth.logout()}finally{setLoggingOut(false)}}}>{loggingOut?'Signing out…':'Sign out'}</button></div></header><div className="live-layout"><aside className="live-sidebar"><span className="live-eyebrow">{kindName[member.kind]}</span><nav aria-label="Workspace navigation">{links.map(link=><Link key={link.path} href={link.path} aria-current={path===link.path?'page':undefined}>{link.label}</Link>)}</nav><p>Good experiences.<br/>Great reputations.</p></aside><main id="workspace-main" tabIndex={-1} key={member.membershipId+':'+path}>{content}</main></div></div>
 }
 export default function Root(){const path=usePath(),publicMatch=/^\/r\/([^/]+)$/.exec(path)
  if(path==='/')return <Landing/>

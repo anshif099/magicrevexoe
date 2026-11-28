@@ -1,7 +1,7 @@
 import type {Classification} from '../../backend/src/business/industry-directory'
 
 export type Kind='platform'|'reseller'|'sub_reseller'|'merchant'
-export type Membership={membershipId:string;tenantId:string;kind:Kind;roleId:string;roleCode:string;permissions:string[]}
+export type Membership={membershipId:string;tenantId:string;kind:Kind;roleId:string;roleCode:string;permissions:string[];supportActorTenantId?:string}
 export type Me={user:{id:string;publicId:string;email:string;displayName:string};memberships:Membership[];selectedMembership:Membership|null;mfaImplemented:boolean}
 export type CompanyDetails=Partial<Record<'legalName'|'registrationNumber'|'address'|'city'|'state'|'postalCode'|'country'|'phone'|'website',string>>
 export type Account={id:string;publicId:string;kind:Kind;parentId:string|null;name:string;status:string;effectiveStatus:string;industryChannelId:string|null;classification?:Classification|null;companyDetails?:CompanyDetails|null;companyDetailsAvailable?:boolean;lockVersion:number;createdAt:string}

@@ -10,7 +10,7 @@ import {creatableKinds,has,kindName,permittedParent,type Account,type Channel,ty
 import {ActionForm,Field,LoadState,Notice,PageTitle,Paginator,useCursor,useLoad,value} from './ui'
 
 export function AccountsPage(){
- const {me,select}=useAuth()
+ const {me,select,openSupportWorkspace}=useAuth()
  const member=me!.selectedMembership!,cursor=useCursor(),[selected,setSelected]=useState(''),[kind,setKind]=useState<Kind>(creatableKinds(member)[0]??'merchant')
  const list=useLoad('accounts:'+cursor.after,()=>api.request<{accounts:Account[];nextCursor:string|null;companyDetailsAvailable?:boolean}>('/tenants?limit=50'+(cursor.after?'&afterId='+cursor.after:''))),channels=useLoad('channels',()=>api.request<{channels:Channel[]}>('/industry-channels'))
  const details=useLoad('account:'+selected,()=>api.request<Account>('/tenants/'+selected),!!selected)
@@ -23,9 +23,9 @@ export function AccountsPage(){
   document.getElementById('account-details')?.scrollIntoView({block:'start'})
  }
  function changed(){list.reload();details.reload();history.reload();descendants.reload()}
- return <><PageTitle title="Accounts"/><LoadState {...list} retry={list.reload}/><section className="live-card"><h2>Your account network</h2><p>Only accounts within your selected workspace are returned.</p>{list.data&&!list.data.accounts.length&&<Notice>No accounts on this page.</Notice>}<div className="live-table-wrap"><table><thead><tr><th>Name</th><th>Account type</th><th>Status</th><th>Actions</th></tr></thead><tbody>{list.data?.accounts.map(a=><tr key={a.id}><td><button className="live-text-button" onClick={()=>openAccount(a.id)}>{a.name}</button></td><td>{kindName[a.kind]}</td><td><span className="live-badge">{a.status}</span>{a.effectiveStatus!=='active'&&<small>Ancestor access blocked</small>}</td><td><button className="live-text-button" aria-label={'View details for '+a.name} onClick={()=>openAccount(a.id)}>View details</button>{a.status==='active'&&a.effectiveStatus==='active'&&a.id!==member.tenantId&&me!.memberships.some(m=>m.tenantId===a.id)&&<ActionForm label="Log in as workspace" onSubmit={async()=>{
-   const membership=me!.memberships.find(m=>m.tenantId===a.id)!
-   await select(membership.membershipId)
+ return <><PageTitle title="Accounts"/><LoadState {...list} retry={list.reload}/><section className="live-card"><h2>Your account network</h2><p>Only accounts within your selected workspace are returned.</p>{list.data&&!list.data.accounts.length&&<Notice>No accounts on this page.</Notice>}<div className="live-table-wrap"><table><thead><tr><th>Name</th><th>Account type</th><th>Status</th><th>Actions</th></tr></thead><tbody>{list.data?.accounts.map(a=><tr key={a.id}><td><button className="live-text-button" onClick={()=>openAccount(a.id)}>{a.name}</button></td><td>{kindName[a.kind]}</td><td><span className="live-badge">{a.status}</span>{a.effectiveStatus!=='active'&&<small>Ancestor access blocked</small>}</td><td><button className="live-text-button" aria-label={'View details for '+a.name} onClick={()=>openAccount(a.id)}>View details</button>{a.status==='active'&&a.effectiveStatus==='active'&&a.id!==member.tenantId&&(isSuperAdmin||me!.memberships.some(m=>m.tenantId===a.id))&&<ActionForm label={isSuperAdmin?'Log in as':'Open workspace'} onSubmit={async()=>{
+   if(isSuperAdmin)await openSupportWorkspace(a.id)
+   else await select(me!.memberships.find(m=>m.tenantId===a.id)!.membershipId)
    navigate(a.kind==='merchant'?'/app/merchants/'+a.id:'/app')
   }}/>} {isSuperAdmin&&a.kind!=='platform'&&a.status!=='closed'&&<DeleteAccount account={a} onDeleted={changed}/>}{a.kind==='merchant'&&a.status!=='closed'&&<Link href={'/app/merchants/'+a.id}>Business →</Link>}</td></tr>)}</tbody></table></div><Paginator next={list.data?.nextCursor} hasPrevious={cursor.hasPrevious} onPrevious={cursor.previous} onNext={()=>list.data?.nextCursor&&cursor.next(list.data.nextCursor)}/></section>
  {!!kinds.length&&<section className="live-card"><h2>Create an account</h2><p>Merchant creation starts onboarding and invites its administrator.</p><ActionForm label="Create account" onSubmit={async data=>{

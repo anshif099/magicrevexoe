@@ -6,7 +6,7 @@ import {kindName} from './types'
 import {ActionForm,Field,Notice,value} from './ui'
 import {Link,LiveBrand,navigate} from './navigation'
 
-type AuthState={me:Me|null;loading:boolean;error:string;mfa:boolean;completeMfa:(code:string)=>Promise<string[]|undefined>;login:(email:string,password:string)=>Promise<boolean>;select:(membershipId:string)=>Promise<void>;logout:()=>Promise<void>;reload:()=>Promise<void>}
+type AuthState={me:Me|null;loading:boolean;error:string;mfa:boolean;completeMfa:(code:string)=>Promise<string[]|undefined>;login:(email:string,password:string)=>Promise<boolean>;select:(membershipId:string)=>Promise<void>;openSupportWorkspace:(tenantId:string)=>Promise<void>;exitSupportWorkspace:()=>Promise<void>;logout:()=>Promise<void>;reload:()=>Promise<void>}
 const Context=createContext<AuthState|null>(null)
 export function AuthProvider({children}:{children:ReactNode}){
  const [mfa,setMfa]=useState(false)
@@ -16,7 +16,7 @@ export function AuthProvider({children}:{children:ReactNode}){
  async function completeMfa(code:string){const result=await api.completeMfa(code);let profile=result.profile;if(profile.memberships.length===1)profile=await api.selectMembership(profile.memberships[0].membershipId);setMe(profile);setMfa(false);return result.recoveryCodes}
  async function select(id:string){setMe(await api.selectMembership(id));setError('')}
  async function logout(){let failed=false;try{await api.logout()}catch{failed=true}setMe(null);setError(failed?'Signed out of this browser. Server revocation could not be confirmed.':'');navigate('/login')}
- return <Context.Provider value={{me,loading,error,mfa,completeMfa,login,select,logout,reload:async()=>setMe(await api.me())}}>{children}</Context.Provider>
+ return <Context.Provider value={{me,loading,error,mfa,completeMfa,login,select,openSupportWorkspace:async id=>setMe(await api.openSupportWorkspace(id)),exitSupportWorkspace:async()=>setMe(await api.exitSupportWorkspace()),logout,reload:async()=>setMe(await api.me())}}>{children}</Context.Provider>
 }
 export function useAuth(){const state=useContext(Context);if(!state)throw Error('Authentication provider missing');return state}
 export function TenantPicker({onSelected}:{onSelected?:()=>void}){const {me,select}=useAuth();return <section className="live-card"><h1>Choose your workspace</h1><p>Select an active account. Permissions are checked by the service.</p>{!me?.memberships.length?<Notice>No active account is available. Contact your administrator.</Notice>:<ActionForm label="Open workspace" onSubmit={async data=>{await select(value(data,'membershipId'));onSelected?.();navigate('/app')}}><Field label="Workspace" name="membershipId"><select name="membershipId" required defaultValue={me.selectedMembership?.membershipId??me.memberships[0].membershipId}>{me.memberships.map(m=><option key={m.membershipId} value={m.membershipId}>{kindName[m.kind]} · Account {m.tenantId}</option>)}</select></Field></ActionForm>}</section>}

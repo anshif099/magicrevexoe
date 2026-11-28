@@ -47,6 +47,33 @@ test('merchant business APIs on disposable MariaDB 11.8.9',{timeout:120000},asyn
   }
   for(const row of await query("SELECT id FROM tenants WHERE kind='merchant'"))await fundTestMerchant(pool,row.id)
   server=createServer(createApp({env,auth,tenants,business,checkDatabase:async()=>{},isShuttingDown:()=>false}));server.listen(0,'127.0.0.1');await once(server,'listening');base='http://127.0.0.1:'+server.address().port
+  await t.test('Super Admin support workspace is scoped, audited and requires an active target',async()=>{
+   const path='/auth/support-workspace'
+   assert.equal((await request('POST',path,'reseller',{tenantId:merchant})).status,403)
+   assert.equal((await request('POST',path,'super',{tenantId:root})).status,403)
+   const opened=await request('POST',path,'super',{tenantId:merchant})
+   assert.equal(opened.status,200)
+   actors.support={token:opened.body.accessToken}
+   try{
+    const profile=(await request('GET','/auth/me','support')).body
+    assert.equal(profile.user.id,actors.super.principal.identity.sub)
+    assert.equal(profile.selectedMembership.tenantId,merchant)
+    assert.equal(profile.selectedMembership.supportActorTenantId,root)
+    assert.equal((await request('GET','/merchants/'+peerMerchant,'support')).status,404)
+    assert.equal((await request('POST',path,'support',{tenantId:peerMerchant})).status,403)
+    assert.equal((await request('POST','/auth/select-tenant','support',{membershipId:actors.super.principal.membership.membershipId})).status,403)
+    const current=(await request('GET','/tenants/'+merchant,'support')).body
+    assert.equal((await request('PATCH','/tenants/'+merchant,'support',{name:current.name,lockVersion:current.lockVersion})).status,200)
+    const events=await query("SELECT action,actor_tenant_id FROM audit_logs WHERE tenant_id=? AND actor_user_id=?",[merchant,profile.user.id])
+    assert.ok(events.some(event=>event.action==='auth.support_workspace_opened'&&event.actor_tenant_id===root))
+    assert.ok(events.some(event=>event.action==='tenant.updated'&&event.actor_tenant_id===root))
+    await query("UPDATE tenants SET status='suspended' WHERE id=?",[merchant])
+    try{
+     assert.equal((await request('GET','/auth/me','support')).status,403)
+     assert.equal((await request('POST',path,'super',{tenantId:merchant})).status,403)
+    }finally{await query("UPDATE tenants SET status='active' WHERE id=?",[merchant])}
+   }finally{delete actors.support}
+  })
   await t.test('all active account types can read all seeded channels, with no drafts exposed',async()=>{
    for(const actor of Object.keys(actors)){const r=await request('GET','/industry-channels',actor);assert.equal(r.status,200);assert.equal(r.body.channels.length,38)}
    assert.equal((await request('GET','/industry-channels',null)).status,401)

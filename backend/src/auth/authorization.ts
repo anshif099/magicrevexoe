@@ -6,7 +6,7 @@ import { identifier, type Identity } from './tokens.js'
 
 export type Kind = 'platform' | 'reseller' | 'sub_reseller' | 'merchant'
 type Tenant = RowDataPacket & { id: string; kind: Kind; parent_id: string | null; status: string; depth: number }
-export type Membership = { membershipId: string; tenantId: string; kind: Kind; roleId: string; roleCode: string; permissions: string[] }
+export type Membership = { membershipId: string; tenantId: string; kind: Kind; roleId: string; roleCode: string; permissions: string[]; supportActorTenantId?: string }
 export type Principal = { identity: Identity; membership?: Membership }
 function denied(): never { throw new HttpError(403, 'Access denied') }
 const validEdge = new Set(['platform/reseller','platform/merchant','reseller/sub_reseller','reseller/merchant','sub_reseller/merchant'])
@@ -31,6 +31,21 @@ export class Authorization {
     const chain = await this.ancestors(row.tenant_id, db)
     const permissions = await select(db, `SELECT p.code FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id WHERE rp.role_id=?`, [row.role_id])
     return { membershipId: row.id, tenantId: row.tenant_id, kind: chain[0]!.kind, roleId: row.role_id, roleCode: row.role_code, permissions: permissions.map(row => row.code as string) }
+  }
+  async workspaceMembership(identity: Identity, db: Database = this.pool): Promise<Membership> {
+    if (!identity.mid) denied()
+    const member = await this.membership(identity.sub, identity.mid, db)
+    if (!identity.supportTenant) return member
+    this.platform(member)
+    const chain = await this.ancestors(identity.supportTenant, db)
+    const kind = chain[0]!.kind
+    if (kind === 'platform' || chain.at(-1)?.id !== member.tenantId) denied()
+    const role = (await select(db, 'SELECT id,code FROM roles WHERE tenant_kind=? AND code=?', [kind, kind + '_admin']))[0]
+    if (!role) denied()
+    const permissions = await select(db, 'SELECT p.code FROM role_permissions rp JOIN permissions p ON p.id=rp.permission_id WHERE rp.role_id=?', [role.id])
+    const excluded = new Set(['platform.manage','membership.manage','reseller.create','sub_reseller.create','merchant.create'])
+    return {membershipId:member.membershipId,tenantId:identity.supportTenant,kind,roleId:role.id,roleCode:role.code,
+      permissions:permissions.map(row=>row.code as string).filter(code=>!excluded.has(code)),supportActorTenantId:member.tenantId}
   }
   requirePermission(member: Membership, permission: string): void { if (!member.permissions.includes(permission)) denied() }
   platform(member: Membership, permission = 'platform.manage'): void {

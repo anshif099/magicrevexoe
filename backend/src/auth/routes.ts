@@ -85,6 +85,12 @@ export function authRoutes(service?: AuthService) {
     const input=body(selectTenant,request.body)
     response.json(await service.selectTenant(principalFrom(response.locals),input.membershipId))
   })
+  router.post('/support-workspace',authenticated,async(request,response)=>{
+    const principal=principalFrom(response.locals)
+    limiter.consume('support-workspace:'+principal.identity.sub,30)
+    const input=body(z.object({tenantId:identifier}).strict(),request.body)
+    response.json(await service.supportWorkspace(principal,input.tenantId))
+  })
   router.get('/me',authenticated,async(_request,response)=>{response.json(await service.me(principalFrom(response.locals)))})
   router.post('/forgot-password',async(request,response)=>{
     const input=body(recovery,request.body)

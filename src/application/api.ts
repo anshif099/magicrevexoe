@@ -13,6 +13,7 @@ export class ApiClient{
  private readonly storage:Storage|undefined
  private readonly listeners=new Set<()=>void>()
  private accessToken:string|undefined
+ private supportToken:string|undefined
  private session:StoredSession|undefined
  private refreshFlight:Promise<void>|undefined
  private restoreFlight:Promise<Me|null>|undefined
@@ -28,7 +29,7 @@ export class ApiClient{
  }
  private persist(){try{if(this.session)this.storage?.setItem(storageKey,JSON.stringify(this.session));else this.storage?.removeItem(storageKey)}catch{/* Memory-only session when tab storage is unavailable. */}}
  subscribe(listener:()=>void){this.listeners.add(listener);return()=>{this.listeners.delete(listener)}}
- clear(){this.pendingMfa=undefined;this.generation++;this.accessToken=undefined;this.session=undefined;this.persist();for(const listener of this.listeners)listener()}
+ clear(){this.pendingMfa=undefined;this.generation++;this.accessToken=undefined;this.supportToken=undefined;this.session=undefined;this.persist();for(const listener of this.listeners)listener()}
  private async send(path:string,method:string,body:unknown,token?:string,blob=false):Promise<unknown>{
   if(!this.base||this.configurationError)throw new ApiError(0,'Set a valid VITE_API_URL to connect this application to your backend.')
   if(!path.startsWith('/')||path.startsWith('//')||path.includes('..')||/[\r\n]/.test(path))throw new ApiError(0,'Invalid API path')
@@ -55,6 +56,7 @@ export class ApiClient{
   return this.refreshFlight
  }
  async request<T>(path:string,method='GET',body?:unknown,authenticated=true,blob=false):Promise<T>{
+  if(authenticated&&this.supportToken)return await this.send(path,method,body,this.supportToken,blob) as T
   if(authenticated&&!this.accessToken)await this.rotate()
   const used=this.accessToken,epoch=this.generation
   try{return await this.send(path,method,body,authenticated?used:undefined,blob) as T}catch(error){
@@ -69,8 +71,23 @@ export class ApiClient{
  async completeMfa(code:string){const pending=this.pendingMfa,epoch=this.generation;if(!pending)throw new ApiError(401,'Sign in again');const reply=await this.send(pending.enrollmentRequired?'/auth/mfa/activate':'/auth/mfa/verify','POST',{challengeToken:pending.challengeToken,code}) as SessionReply & {recoveryCodes?:string[]};if(epoch!==this.generation)throw new ApiError(401,'Session changed');this.pendingMfa=undefined;this.accessToken=reply.accessToken;this.session={refreshToken:reply.refreshToken};this.persist();return {profile:await this.me(),recoveryCodes:reply.recoveryCodes}}
  me(){return this.request<Me>('/auth/me')}
  restore(){if(this.restoreFlight)return this.restoreFlight;this.restoreFlight=(async()=>{if(!this.session)return null;await this.rotate();return this.me()})().finally(()=>{this.restoreFlight=undefined});return this.restoreFlight}
- async selectMembership(membershipId:string){const epoch=this.generation;const selected=await this.request<{accessToken:string}>('/auth/select-tenant','POST',{membershipId});if(epoch!==this.generation||!this.session)throw new ApiError(401,'Session changed');this.accessToken=selected.accessToken;this.session={...this.session,membershipId};this.persist();return this.me()}
- async logout(){try{if(this.session)await this.request('/auth/logout','POST')}finally{this.clear()}}
+ async selectMembership(membershipId:string){if(this.supportToken)throw new ApiError(403,'Return to Super Admin before switching workspaces.');const epoch=this.generation;const selected=await this.request<{accessToken:string}>('/auth/select-tenant','POST',{membershipId});if(epoch!==this.generation||!this.session)throw new ApiError(401,'Session changed');this.accessToken=selected.accessToken;this.session={...this.session,membershipId};this.persist();return this.me()}
+ async openSupportWorkspace(tenantId:string){
+  const epoch=this.generation
+  const reply=await this.request<{accessToken:string}>('/auth/support-workspace','POST',{tenantId})
+  const profile=await this.send('/auth/me','GET',undefined,reply.accessToken) as Me
+  if(epoch!==this.generation||!this.session||profile.selectedMembership?.tenantId!==tenantId||!profile.selectedMembership.supportActorTenantId)throw new ApiError(403,'Could not open the support workspace.')
+  this.generation++
+  this.supportToken=reply.accessToken
+  return profile
+ }
+ async exitSupportWorkspace(){
+  const token=this.supportToken
+  this.supportToken=undefined
+  const epoch=++this.generation
+  try{return await this.me()}catch(error){if(epoch===this.generation&&this.session)this.supportToken=token;throw error}
+ }
+ async logout(){this.supportToken=undefined;try{if(this.session)await this.request('/auth/logout','POST')}finally{this.clear()}}
  public<T>(path:string,method='GET',body?:unknown){return this.request<T>(path,method,body,false)}
  print(id:string){return this.request<Blob>('/qr-assets/'+encodeURIComponent(id)+'/print.pdf','GET',undefined,true,true)}
  asset(id:string){return this.request<Blob>('/qr-assets/'+encodeURIComponent(id)+'/content','GET',undefined,true,true)}

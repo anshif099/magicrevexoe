@@ -46,7 +46,7 @@ export class TenantService {
     const session=(await select(db,'SELECT id,mfa_verified,challenge_only FROM auth_sessions WHERE id=? AND user_id=? AND revoked_at IS NULL AND expires_at>UTC_TIMESTAMP(6) AND auth_version=?',[principal.identity.sid,principal.identity.sub,principal.identity.av]))[0]
     if(!session||session.challenge_only||(await this.auth.requiresMfa(db,principal.identity.sub)&&(!session.mfa_verified||principal.identity.amr.length!==2)))throw new HttpError(401,'Authentication required')
     if(!principal.identity.mid)denied()
-    const member=await this.auth.authorization.membership(principal.identity.sub,principal.identity.mid,db)
+    const member=await this.auth.authorization.workspaceMembership(principal.identity,db)
     return work(db,{member,principal})
    })
   }catch(error){
@@ -68,7 +68,7 @@ export class TenantService {
  }
  private async audit(db:PoolConnection,actor:Actor,target:string,action:string,metadata:Record<string,string|boolean>,resourceType='tenant',resourceId=target,requestId?:Buffer){
   await db.execute(`INSERT INTO audit_logs(event_id,tenant_id,actor_user_id,actor_tenant_id,actor_membership_id,action,resource_type,resource_id,request_id,outcome,safe_metadata)
-   VALUES (?,?,?,?,?,?,?,?,?,'success',?)`,[randomBytes(16),target,actor.principal.identity.sub,actor.member.tenantId,actor.member.membershipId,action,resourceType,resourceId,requestId??randomBytes(16),JSON.stringify(metadata)])
+   VALUES (?,?,?,?,?,?,?,?,?,'success',?)`,[randomBytes(16),target,actor.principal.identity.sub,actor.member.supportActorTenantId??actor.member.tenantId,actor.member.membershipId,action,resourceType,resourceId,requestId??randomBytes(16),JSON.stringify(metadata)])
  }
  private async verifyDelivery(){
   if(!this.delivery)throw new HttpError(503,'Invitation delivery unavailable')
