@@ -1,19 +1,61 @@
-import {useRef,useState,type FormEvent} from 'react'
-import {api,errorMessage} from './api'
+﻿import {useState,type FormEvent} from 'react'
 import {Notice} from './ui'
 import {publicText,publicMessages,type Language} from './languages'
+
 const tags=['friendly_team','clean_environment','short_wait','long_wait','helpful_service','service_could_improve'] as const
-export function DraftForm({code,token,language,googleUrl,presetRating}:{code:string;token:string;language:Language;googleUrl:string;presetRating?:number|undefined}){
- const text=publicText[language],[busy,setBusy]=useState(false),[draft,setDraft]=useState(''),[error,setError]=useState(''),attempt=useRef<{requestKey:string;submissionToken:string;language:Language;rating:number;tags:string[];complex:boolean}|null>(null)
- const [submitted,setSubmitted]=useState(false)
+const templates={
+ en:{
+  rating:(value:number)=>`My overall rating is ${value} out of 5.`,
+  sentences:['The team was friendly.','The place was clean.','The wait was short.','The wait was long.','The service was helpful.','The service could improve.'],
+ },
+ hi:{
+  rating:(value:number)=>`मेरी कुल रेटिंग 5 में से ${value} है।`,
+  sentences:['टीम का व्यवहार दोस्ताना था।','जगह साफ़ थी।','ज़्यादा इंतज़ार नहीं करना पड़ा।','काफ़ी देर इंतज़ार करना पड़ा।','सेवा मददगार थी।','सेवा में सुधार की गुंजाइश है।'],
+ },
+ ml:{
+  rating:(value:number)=>`എന്റെ മൊത്തത്തിലുള്ള റേറ്റിംഗ് 5-ൽ ${value} ആണ്.`,
+  sentences:['ജീവനക്കാർ സൗഹൃദപരമായിരുന്നു.','സ്ഥലം വൃത്തിയുള്ളതായിരുന്നു.','കാത്തിരിപ്പ് കുറവായിരുന്നു.','കാത്തിരിപ്പ് നീണ്ടുപോയി.','സേവനം സഹായകരമായിരുന്നു.','സേവനം മെച്ചപ്പെടുത്താൻ കഴിയും.'],
+ },
+}
+
+export function DraftForm({language,googleUrl,presetRating}:{language:Language;googleUrl:string;presetRating?:number|undefined}){
+ const text=publicText[language]
+ const [draft,setDraft]=useState<string|null>(null)
+ const [error,setError]=useState('')
  const [ownRating,setOwnRating]=useState<string|undefined>()
- async function generate(event:FormEvent<HTMLFormElement>){event.preventDefault();if(busy)return
+ function generate(event:FormEvent<HTMLFormElement>){
+  event.preventDefault()
   const data=new FormData(event.currentTarget)
-  setOwnRating(String(data.get('rating')))
-  if(data.getAll('tags').length>3){setError(publicMessages[language].maxTags);return}
-  if(!attempt.current)attempt.current={requestKey:crypto.randomUUID(),submissionToken:token,language,rating:Number(data.get('rating')),tags:data.getAll('tags').map(String),complex:data.get('complex')==='on'}
-  setBusy(true);setSubmitted(true);setError('')
-  try{const result=await api.public<{draft:string;language:Language;editable:boolean;posted:boolean}>('/public/funnels/'+encodeURIComponent(code)+'/drafts','POST',attempt.current);if(typeof result.draft!=='string'||result.language!==language||result.editable!==true||result.posted!==false)throw Error();setDraft(result.draft)}catch(error){setError(language==='en'?errorMessage(error):publicMessages[language].draftError)}finally{setBusy(false)}
+  const rating=Number(data.get('rating'))
+  const selected=data.getAll('tags')
+  if(selected.length>3){setError(publicMessages[language].maxTags);return}
+  const template=templates[language]
+  setDraft([template.rating(rating),...template.sentences.filter((_,index)=>selected.includes(tags[index]))].join(' '))
+  setError('')
  }
- return <details className="live-private-form"><summary>{text.ai}</summary><p>{text.aiNote}</p>{!draft&&<form className="live-form" onSubmit={generate}><fieldset disabled={busy||submitted}><label>{text.rating}<select name="rating" required value={ownRating??String(presetRating??'')} onChange={e=>setOwnRating(e.target.value)}><option value="">{text.choose}</option>{[1,2,3,4,5].map(r=><option key={r} value={r}>{r} {text.outOf}</option>)}</select></label>{tags.map(tag=><label key={tag} className="live-check"><input name="tags" value={tag} type="checkbox"/>{text[tag]}</label>)}<label className="live-check"><input type="checkbox" name="complex"/>{text.complex}</label></fieldset><button className="live-button" disabled={busy}>{busy?text.generating:text.generate}</button></form>}{draft&&<><label className="live-field">{text.draft}<textarea value={draft} maxLength={4096} onChange={e=>setDraft(e.target.value)}/></label><button className="live-button" disabled={!draft.trim()} onClick={()=>{window.open(googleUrl,'_blank','noopener,noreferrer');if(navigator.clipboard)void navigator.clipboard.writeText(draft).catch(()=>setError(text.copyFailed));else setError(text.copyFailed)}}>{text.copy}</button></>}{error&&<Notice error>{error}</Notice>}</details>
+ function copyAndOpen(){
+  window.open(googleUrl,'_blank','noopener,noreferrer')
+  if(navigator.clipboard)void navigator.clipboard.writeText(draft??'').catch(()=>setError(text.copyFailed))
+  else setError(text.copyFailed)
+ }
+ return <details className="live-private-form">
+  <summary>{text.ai}</summary>
+  <p>{text.aiNote}</p>
+  <form className="live-form" onSubmit={generate} hidden={draft!==null}>
+   <label className="live-field">{text.rating}<select name="rating" required value={ownRating??String(presetRating??'')} onChange={event=>setOwnRating(event.target.value)}>
+    <option value="">{text.choose}</option>
+    {[1,2,3,4,5].map(rating=><option key={rating} value={rating}>{rating} {text.outOf}</option>)}
+   </select></label>
+   {tags.map(tag=><label key={tag} className="live-check"><input name="tags" value={tag} type="checkbox"/>{text[tag]}</label>)}
+   <button className="live-button">{text.generate}</button>
+  </form>
+  {draft!==null&&<>
+   <label className="live-field">{text.draft}<textarea value={draft} maxLength={4096} onChange={event=>setDraft(event.target.value)}/></label>
+   <div className="live-row">
+    <button className="live-button" disabled={!draft.trim()} onClick={copyAndOpen}>{text.copy}</button>
+    <button className="live-quiet-button" onClick={()=>{setDraft(null);setError('')}}>{text.newForm}</button>
+   </div>
+  </>}
+  {error&&<Notice error>{error}</Notice>}
+ </details>
 }

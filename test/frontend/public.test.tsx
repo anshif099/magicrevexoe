@@ -22,10 +22,23 @@ it('keeps both paths and structured clinic questions in Hindi and Malayalam',asy
  render(<PublicPage code={code}/>);await screen.findByRole('link',{name:/Google/});const user=userEvent.setup()
  for(const language of ['hi','ml'] as const){await user.selectOptions(screen.getByLabelText('Language'),language);expect(screen.getByRole('link',{name:new RegExp(publicText[language].google)})).toBeVisible();await user.click(screen.getByRole('button',{name:publicText[language].private}));expect(screen.getByRole('button',{name:publicText[language].send})).toBeVisible();expect(screen.queryByRole('textbox')).not.toBeInTheDocument()}
 })
-it('AI drafting sends structured facts and selected language; editable text appears only after provider result',async()=>{
- const requests:Record<string,unknown>[]=[]
- vi.stubGlobal('fetch',vi.fn(async(url,options)=>{if(String(url).endsWith('/drafts')){requests.push(JSON.parse(String(options?.body)));return json({draft:'Service could improve.',language:'en',editable:true,posted:false})}return json(funnel)}))
- render(<PublicPage code={code}/>);await screen.findByRole('link',{name:/Google/});const user=userEvent.setup();await user.click(screen.getByText(publicText.en.ai));await user.selectOptions(screen.getByLabelText(publicText.en.rating),'1');await user.click(screen.getByRole('button',{name:publicText.en.generate}));expect(await screen.findByRole('textbox')).toHaveValue('Service could improve.');expect(requests[0]).toMatchObject({language:'en',rating:1,tags:[]});expect(requests[0]).not.toHaveProperty('merchantId');expect(screen.getByRole('link',{name:/Google/})).toBeVisible()
+it('builds an editable draft from the selected details without a draft API request',async()=>{
+ const fetchMock=vi.fn(async(_url:string)=>json(funnel))
+ vi.stubGlobal('fetch',fetchMock)
+ render(<PublicPage code={code}/>)
+ await screen.findByRole('link',{name:/Google/})
+ const user=userEvent.setup()
+ await user.click(screen.getByText(publicText.en.ai))
+ await user.selectOptions(screen.getByLabelText(publicText.en.rating),'4')
+ await user.click(screen.getByRole('checkbox',{name:'Friendly team'}))
+ await user.click(screen.getByRole('button',{name:publicText.en.generate}))
+ const draft=await screen.findByRole('textbox')
+ expect(draft).toHaveValue('My overall rating is 4 out of 5. The team was friendly.')
+ await user.clear(draft)
+ await user.type(draft,'My edited draft.')
+ expect(draft).toHaveValue('My edited draft.')
+ expect(fetchMock.mock.calls.some(([url])=>String(url).endsWith('/drafts'))).toBe(false)
+ expect(screen.getByRole('link',{name:/Google/})).toBeVisible()
 })
 it('renders independent Google/private options, submits structured clinic ratings and keeps Google after confirmation',async()=>{
  const requests:{path:string;body:Record<string,unknown>|undefined}[]=[]
